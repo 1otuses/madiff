@@ -165,7 +165,7 @@ def sequence_dataset(env, preprocess_fn, seed: int = None):
         print(f"\n USE SEED {seed} DATASET \n")
         seed_dirs = [f"seed_{seed}_data"]
 
-    n_agents = env.n
+    n_agents = env.unwrapped.n
     for idx, seed_dir in enumerate(seed_dirs):
         seed_path = os.path.join(dataset_path, seed_dir)
         if not os.path.isdir(seed_path):
@@ -208,9 +208,9 @@ def sequence_dataset(env, preprocess_fn, seed: int = None):
             data_["rewards"].append(rew)
             data_["terminals"].append(done)
 
-            if done.all() or len(data_["observations"]) == env.max_timestep:
+            if done.all() or len(data_["observations"]) == env.unwrapped.max_timestep:
                 data_["timeouts"] = np.zeros_like(data_["terminals"])
-                if len(data_["observations"]) == env.max_timestep:
+                if len(data_["observations"]) == env.unwrapped.max_timestep:
                     data_["terminals"][-1][:] = 0.0
                     data_["timeouts"][-1][:] = 1.0
                 episode_data = {}

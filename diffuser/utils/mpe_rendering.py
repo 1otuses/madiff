@@ -175,15 +175,15 @@ class MPERenderer:
 def set_state(env, state):
     # FIXME: this is a hack
     if env.metadata["name"] in ["simple_tag", "simple_world"]:
-        agents = env.world.agents[:-1]
+        agents = env.unwrapped.world.agents[:-1]
     else:
-        agents = env.world.agents
+        agents = env.unwrapped.world.agents
 
     for idx, agent in enumerate(agents):
         agent.state.p_vel = state[idx, :2]
         agent.state.p_pos = state[idx, 2:4]
 
-    for idx, landmark in enumerate(env.world.landmarks):
+    for idx, landmark in enumerate(env.unwrapped.world.landmarks):
         # use the first agent to recover the absolute position of landmarks
         landmark.state.p_pos = state[0, 4 + 2 * idx : 4 + 2 * idx + 2] + state[0, 2:4]
 
@@ -196,8 +196,8 @@ def rollouts_from_state(env, state, actions_l):
 
 
 def rollout_from_state(env, state, actions):
-    qpos_dim = env.sim.data.qpos.size
-    env.set_state(state[:qpos_dim], state[qpos_dim:])
+    qpos_dim = env.unwrapped.sim.data.qpos.size
+    env.unwrapped.set_state(state[:qpos_dim], state[qpos_dim:])
     observations = [env._get_obs()]
     for act in actions:
         obs, rew, term, _ = env.step(act)

@@ -45,7 +45,7 @@ def load_environment(name):
     idx = name.find(
         "-", name.find("-") + 1
     )  # the second '-' divides the env name and data split
-    env_name, data_split = name[:idx], name[idx + 1 :]
+    env_name, data_split = name[:idx], name[idx + 1:]
 
     if env_name == "HalfCheetah-v2":
         env_kwargs = dict(
@@ -94,7 +94,8 @@ def sequence_dataset(env, preprocess_fn):
         env.metadata["data_split"],
     )
     if not os.path.exists(dataset_path):
-        raise FileNotFoundError("Dataset directory not found: {}".format(dataset_path))
+        raise FileNotFoundError(
+            "Dataset directory not found: {}".format(dataset_path))
 
     n_agents = env.n_agents
     for idx, seed_dir in enumerate(os.listdir(dataset_path)):
@@ -134,7 +135,8 @@ def sequence_dataset(env, preprocess_fn):
         if ADD_AGENT_ID:
             observations = np.concatenate(
                 (
-                    np.tile(env.one_hot_agent_ids[None], (observations.shape[0], 1, 1)),
+                    np.tile(env.one_hot_agent_ids[None],
+                            (observations.shape[0], 1, 1)),
                     observations,
                 ),
                 axis=2,

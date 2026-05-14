@@ -4,6 +4,7 @@ import numpy as np
 
 
 def atleast_nd(x, n: int):
+    # 确保x至少有n个维度，不足则添加轴维度
     while x.ndim < n:
         x = np.expand_dims(x, axis=-1)
     return x
@@ -19,6 +20,11 @@ class ReplayBuffer:
         global_feats: List[str] = ["states"],
         use_zero_padding: bool = True,
     ):
+        # max_n_episodes: 最大episode数
+        # max_path_length: 最大路径长度
+        # termination_penalty: 终止惩罚
+        # global_feats: 全局特征
+        # use_zero_padding: 是否使用零填充
         self._dict = {
             "path_lengths": np.zeros(max_n_episodes, dtype=int),
         }
@@ -31,6 +37,7 @@ class ReplayBuffer:
         self.use_zero_padding = use_zero_padding
 
     def __repr__(self):
+        # 打印buffer的字段形状
         return "[ datasets/buffer ] Fields:\n" + "\n".join(
             f"    {key}: {val.shape}" for key, val in self.items()
         )
@@ -82,6 +89,7 @@ class ReplayBuffer:
         assert path_length <= self.max_path_length
 
         # NOTE(zbzhu): agents must terminate together
+        # 检查所有agent是否同时终止
         all_terminals = np.any(path["terminals"], axis=1)
         if all_terminals.any():
             assert (bool(all_terminals[-1]) is True) and (not all_terminals[:-1].any())
@@ -122,7 +130,9 @@ class ReplayBuffer:
         new = min(step, old)
         self._dict["path_lengths"][path_ind] = new
 
-    def finalize(self):
+    def finalize(self): 
+        # 完成buffer的初始化，移除额外的槽位
+        # 并添加属性以便通过buffer.key访问字段
         # remove extra slots
         for key in self.keys + ["path_lengths"]:
             self._dict[key] = self._dict[key][: self._count]

@@ -224,7 +224,12 @@ class MujocoMulti(MultiAgentEnv):
 
     def get_state(self, team=None):
         # TODO: May want global states for different teams (so cannot see what the other team is communicating e.g.)
-        return self.env._get_obs()
+        try:
+            # 尝试使用新版gym的公开方法
+            return self.env.get_obs()
+        except AttributeError:
+            # 回退到旧版gym的私有方法
+            return self.env._get_obs()
 
     def get_state_size(self):
         """Returns the shape of the state"""

@@ -4,6 +4,7 @@ import os
 import einops
 import torch
 from ml_logger import logger
+from torch.utils.tensorboard import SummaryWriter
 
 import diffuser
 
@@ -61,6 +62,7 @@ class Trainer(object):
         bucket=None,
         train_device="cuda",
         save_checkpoints=False,
+        use_tensorboard=True,  # <-- 新增参数
     ):
         super().__init__()
         self.model = diffusion_model
@@ -106,7 +108,8 @@ class Trainer(object):
             )
 
         self.renderer = renderer
-        self.optimizer = torch.optim.Adam(diffusion_model.parameters(), lr=train_lr)
+        self.optimizer = torch.optim.Adam(
+            diffusion_model.parameters(), lr=train_lr)
 
         self.bucket = bucket
         self.n_reference = n_reference
@@ -116,6 +119,16 @@ class Trainer(object):
 
         self.evaluator = None
         self.device = train_device
+
+        # --- TensorBoard 集成 ---
+        self.use_tensorboard = use_tensorboard
+        if self.use_tensorboard:
+            tb_log_dir = os.path.join(self.bucket, logger.prefix, "tensorboard")
+            os.makedirs(tb_log_dir, exist_ok=True)
+            self.tb_writer = SummaryWriter(log_dir=tb_log_dir)
+            logger.print(f"[ utils/training ] TensorBoard logs at: {tb_log_dir}")
+        else:
+            self.tb_writer = None
 
     def set_evaluator(self, evaluator):
         self.evaluator = evaluator
@@ -127,6 +140,10 @@ class Trainer(object):
             self.evaluate()
         if self.evaluator is not None:
             del self.evaluator
+        # 关闭 TensorBoard writer
+        if self.tb_writer is not None:
+            self.tb_writer.close()
+            logger.print("[ utils/training ] TensorBoard writer closed.")
 
     def reset_parameters(self):
         self.ema_model.load_state_dict(self.model.state_dict())
@@ -174,6 +191,11 @@ class Trainer(object):
                 logger.log(
                     step=self.step, loss=loss.detach().item(), **metrics, flush=True
                 )
+                # --- TensorBoard ---
+                if self.tb_writer is not None:
+                    self.tb_writer.add_scalar("Loss/total", loss.detach().item(), self.step)
+                    for k, v in metrics.items():
+                        self.tb_writer.add_scalar(f"Loss/{k}", v, self.step)
 
             if self.sample_freq and self.step == 0:
                 self.render_reference(self.n_reference)
@@ -219,7 +241,8 @@ class Trainer(object):
         loads model and ema from disk
         """
 
-        loadpath = os.path.join(self.bucket, logger.prefix, "checkpoint/state.pt")
+        loadpath = os.path.join(
+            self.bucket, logger.prefix, "checkpoint/state.pt")
         data = torch.load(loadpath)
 
         self.step = data["step"]
@@ -253,7 +276,7 @@ class Trainer(object):
         # conditions = to_np(batch.cond[0])[:, None]
 
         # [ batch_size x horizon x observation_dim ]
-        normed_observations = trajectories[..., self.dataset.action_dim :]
+        normed_observations = trajectories[..., self.dataset.action_dim:]
         shape = normed_observations.shape
         observations = self.dataset.normalizer.unnormalize(
             normed_observations.reshape(-1, *normed_observations.shape[2:]),
@@ -327,11 +350,12 @@ class Trainer(object):
             else:
                 returns = None
 
-            samples = self.ema_model.conditional_sample(conditions, returns=returns)
+            samples = self.ema_model.conditional_sample(
+                conditions, returns=returns)
             samples = to_np(samples)
 
             # [ n_samples x horizon x agent x observation_dim ]
-            normed_observations = samples[:, :, :, self.dataset.action_dim :]
+            normed_observations = samples[:, :, :, self.dataset.action_dim:]
 
             # [ 1 x 1 x agent x observation_dim ]
             # normed_conditions = to_np(batch.cond[0])[:, None]
@@ -382,7 +406,8 @@ class Trainer(object):
             else:
                 returns = None
 
-            samples = self.ema_model.conditional_sample(conditions, returns=returns)
+            samples = self.ema_model.conditional_sample(
+                conditions, returns=returns)
             samples = to_np(samples)
 
             # [ n_samples x horizon x n_agents x observation_dim ]

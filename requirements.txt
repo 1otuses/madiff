@@ -45,7 +45,7 @@ tensorflow-estimator==2.0.0
 tqdm
 typed-argument-parser==1.7.2
 -e ./third_party/multiagent-particle-envs
--e ./third_party/multiagent_mujoco
+-e ./third_party/multiagent_mujoco   # 安装MA-Mujoco
 -e ./third_party/ddpg-agent
 mjrl@git+https://github.com/aravindr93/mjrl@master#egg=mjrl
 D4RL@git+https://github.com/Farama-Foundation/d4rl@e840e80ec4ed51bbb0e557e466198b5d1ae29a15

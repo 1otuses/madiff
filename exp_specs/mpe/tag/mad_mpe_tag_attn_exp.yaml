@@ -72,6 +72,7 @@ constants:
   save_parallel: False
   n_reference: 3
   save_checkpoints: True
+  use_tensorboard: True
 
   # eval
   evaluator: "utils.MADEvaluator"

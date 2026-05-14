@@ -1,7 +1,7 @@
 meta_data:
   exp_name: "mad_mpe"
   script_path: "run_scripts/train.py"
-  num_workers: 2
+  num_workers: 1
   job_name: "{dataset}/h_{horizon}-{model}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
 
 variables:
@@ -62,7 +62,7 @@ constants:
   # training
   n_steps_per_epoch: 10000
   n_train_steps: 1000000
-  batch_size: 32
+  batch_size: 8
   learning_rate: 0.0002
   gradient_accumulate_every: 2
   ema_decay: 0.995

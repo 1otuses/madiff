@@ -11,6 +11,7 @@ from diffuser.utils.launcher_util import (
 
 
 def main(Config, RUN):
+    # 禁用cudnn的benchmark模式以确保结果的可重复性
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     utils.set_seed(Config.seed)
@@ -177,7 +178,7 @@ def main(Config, RUN):
         evaluator.init(log_dir=logger.prefix)
         trainer.set_evaluator(evaluator)
 
-    if Config.continue_training:
+    if Config.continue_training: # 从上次中断的地方继续训练
         loadpath = discover_latest_checkpoint_path(
             os.path.join(trainer.bucket, logger.prefix, "checkpoint")
         )
@@ -198,7 +199,7 @@ def main(Config, RUN):
     utils.report_parameters(model)
 
     logger.print("Testing forward...", end=" ", flush=True)
-    batch = utils.batchify(dataset[0], Config.device)
+    batch = utils.batchify(dataset[0], Config.device) # 测试前向传播是否正常
     loss, _ = diffusion.loss(**batch)
     loss.backward()
     logger.print("✓")
@@ -206,7 +207,7 @@ def main(Config, RUN):
     # -----------------------------------------------------------------------------#
     # --------------------------------- main loop ---------------------------------#
     # -----------------------------------------------------------------------------#
-
+    # 主训练循环
     n_epochs = int((Config.n_train_steps - trainer.step) // Config.n_steps_per_epoch)
 
     for i in range(n_epochs):

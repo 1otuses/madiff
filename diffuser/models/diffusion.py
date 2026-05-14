@@ -11,6 +11,7 @@ from diffuser.models.helpers import Losses, apply_conditioning
 
 
 class GaussianDiffusion(nn.Module):
+    # 实现高斯扩散模型
     def __init__(
         self,
         model,
@@ -19,10 +20,10 @@ class GaussianDiffusion(nn.Module):
         history_horizon: int,
         observation_dim: int,
         action_dim: int,
-        use_inv_dyn: bool = True,
+        use_inv_dyn: bool = True,  # 是否采用逆动力学模型，默认True
         discrete_action: bool = False,
         num_actions: int = 0,  # for discrete action space
-        n_timesteps: int = 1000,
+        n_timesteps: int = 1000,  # 扩散步长默认1000步
         clip_denoised: bool = False,
         predict_epsilon: bool = True,
         action_weight: float = 1.0,
@@ -32,13 +33,13 @@ class GaussianDiffusion(nn.Module):
         state_loss_weight: float = None,
         opponent_loss_weight: float = None,
         returns_condition: bool = False,
-        condition_guidance_w: float = 1.2,
+        condition_guidance_w: float = 1.2,  # 条件引导权重，默认1.2
         returns_loss_guided: bool = False,
-        loss_guidence_w: float = 0.1,
+        loss_guidence_w: float = 0.1,  # 损失引导权重，默认0.1
         value_diffusion_model: nn.Module = None,
         train_only_inv: bool = False,
-        share_inv: bool = True,
-        joint_inv: bool = False,
+        share_inv: bool = True,  # 是否共享逆动力学模型（所有智能体使用同一个模型），默认True
+        joint_inv: bool = False,  # 是否采用联合逆动力学模型，默认False
         data_encoder: utils.Encoder = utils.IdentityEncoder(),
         **kwargs,
     ):
@@ -98,6 +99,7 @@ class GaussianDiffusion(nn.Module):
         self.loss_fn = Losses[loss_type](loss_weights)
 
     def _build_inv_model(self, hidden_dim: int, output_dim: int):
+        # 构建逆动力学模型
         if self.joint_inv:
             print("\n USE JOINT INV \n")
             inv_model = nn.Sequential(
@@ -137,6 +139,10 @@ class GaussianDiffusion(nn.Module):
         return inv_model
 
     def set_ddim_scheduler(self, n_ddim_steps: int = 15):
+        # 设置DDIM调度器
+        # DDIM调度器用于在采样过程中生成高斯噪声，以模拟数据的生成过程
+        # 该调度器通过调整噪声的方差，使模型在不同时间步长上生成的样本更符合真实数据的分布
+        # 这允许模型在生成样本时，根据噪声的方差来控制样本的随机性，从而实现更真实的样本生成
         self.ddim_noise_scheduler = DDIMScheduler(
             num_train_timesteps=self.n_timesteps,
             clip_sample=True,
@@ -500,6 +506,9 @@ class GaussianDiffusion(nn.Module):
 
 
 class ValueDiffusion(GaussianDiffusion):
+    # 值扩散模型
+    # 用于学习智能体的奖励函数（例如，奖励函数可以是智能体的奖励）
+    # 值扩散模型通过学习奖励函数的分布，来生成符合奖励函数的样本
     def __init__(self, *args, clean_only=False, **kwargs):
         assert "value" in kwargs["loss_type"]
         super().__init__(*args, **kwargs)

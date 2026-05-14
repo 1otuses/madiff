@@ -17,6 +17,7 @@ from .temporal import (
 
 
 class ConvAttentionDeconv(nn.Module):
+    # 卷积注意力去噪器
     agent_share_parameters = False
 
     def __init__(
@@ -227,6 +228,7 @@ class ConvAttentionDeconv(nn.Module):
 
 
 class SharedConvAttentionDeconv(nn.Module):
+    # 共享卷积注意力去噪器
     agent_share_parameters = True
 
     def __init__(
@@ -419,6 +421,7 @@ class SharedConvAttentionDeconv(nn.Module):
 
 
 class SharedAttentionAutoEncoder(nn.Module):
+    # 共享注意力自编码器
     agent_share_parameters = True
 
     def __init__(
