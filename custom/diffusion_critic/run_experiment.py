@@ -448,7 +448,8 @@ def run_smac_experiment(args):
     eval_mlp_norm = evaluate_mlp_critic(mlp_critic, eval_states, eval_returns_norm, device)
 
     # 反归一化 MLP 评估
-    mlp_preds_norm = mlp_critic(eval_states.to(device)).squeeze(-1)
+    with torch.no_grad():
+        mlp_preds_norm = mlp_critic(eval_states.to(device)).squeeze(-1)
     mlp_preds = mlp_preds_norm * return_std + return_mean
     eval_mlp = {
         "mse": float(((mlp_preds - eval_returns_true.to(device)) ** 2).mean().item()),
@@ -463,7 +464,7 @@ def run_smac_experiment(args):
                                                 n_samples=1000).cpu().numpy()
     diff_samples = diff_samples_norm * return_std + return_mean
     true_returns_sel = eval_returns_true[:4].cpu().numpy()
-    mlp_preds_sel = mlp_preds[:4].cpu().numpy()
+    mlp_preds_sel = mlp_preds[:4].cpu().detach().numpy()
 
     print(f"  Diffusion Critic MAE (normed): {eval_diff_norm['mean_mae']:.3f}")
     print(f"  MLP Critic MAE (real): {eval_mlp['mae']:.3f}")
