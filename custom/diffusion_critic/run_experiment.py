@@ -40,7 +40,7 @@ from diffusion_critic import DiffusionCritic as ToyDiffusionCritic
 
 # SMAC 相关
 from smac_dataset import load_smac_returns
-from diffusion_critic_adv import DiffusionCritic as AdvDiffusionCritic
+from diffusion_critic_ac import DiffusionCriticAC
 
 
 # ============================================================================

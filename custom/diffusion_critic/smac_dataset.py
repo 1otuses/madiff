@@ -118,7 +118,7 @@ def load_smac_returns(
     all_returns = np.concatenate(all_returns, axis=0)   # [N]
     all_states = np.concatenate(all_states, axis=0)     # [N, D]
 
-    # 5. 做简单的统计归一化（return 缩放到合理范围）
+    # 5. 做简单的统计归一化
     return_mean = all_returns.mean()
     return_std = all_returns.std() + 1e-6
 
@@ -160,3 +160,111 @@ def create_smac_dataloader(
     )
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader, info
+
+
+# ============================================================================
+# Actor-Critic 版本: 加载 (state, action, return) 三元组
+# ============================================================================
+
+def load_smac_state_action_returns(
+    data_dir: str,
+    discount: float = 0.99,
+    max_episodes: int = None,
+    use_global_state: bool = True,
+    use_agent_obs: bool = True,
+) -> tuple:
+    """
+    从 SMAC 离线数据加载 (state, action, return) 三元组,
+    用于训练 Action-conditioned Diffusion Critic P(R|s, a)。
+
+    返回:
+      states_np:   [N, state_dim]  联合状态 (agent obs + global state)
+      actions_np:  [N, n_agents]   离散动作 (int)
+      returns_np:  [N]             return-to-go
+      info:        dict            数据集元信息
+    """
+    import os as _os
+
+    data_dir = Path(data_dir)
+    data_dir_str = str(data_dir)
+    project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.realpath(__file__))))
+
+    if not _os.path.isabs(data_dir_str):
+        env_name = data_dir_str.split("/")[-1]
+        if "-" in env_name and "/" not in env_name:
+            scenario, quality = env_name.split("-", 1)
+            data_dir = Path(project_root) / "diffuser/datasets/data/smac" / scenario / quality
+        else:
+            data_dir = Path(project_root) / data_dir_str
+
+    if not data_dir.exists():
+        raise FileNotFoundError(f"SMAC data directory not found: {data_dir}")
+
+    # 1. 加载数据
+    obs = np.load(data_dir / "obs.npy")            # [T, A, obs_dim]
+    rewards = np.load(data_dir / "rewards.npy")    # [T, A]
+    states = np.load(data_dir / "states.npy")      # [T, global_dim]
+    actions = np.load(data_dir / "actions.npy")    # [T, A]
+    path_lengths = np.load(data_dir / "path_lengths.npy")  # [E]
+
+    total_steps, n_agents, obs_dim = obs.shape
+    n_actions = int(actions.max() + 1)
+
+    print(f"[SMAC S-A-R Dataset] {data_dir.name}")
+    print(f"  Steps: {total_steps:,}, Agents: {n_agents}, Obs: {obs_dim}, Actions: {n_actions}")
+
+    # 2. 构建状态特征
+    state_parts = []
+    if use_agent_obs:
+        state_parts.append(obs.reshape(total_steps, -1))  # [T, A*obs_dim]
+    if use_global_state:
+        state_parts.append(states)  # [T, global_dim]
+    state_features = np.concatenate(state_parts, axis=-1)  # [T, state_dim]
+    state_dim = state_features.shape[-1]
+
+    # 3. 按 episode 计算 return-to-go
+    n_episodes = min(len(path_lengths), max_episodes or len(path_lengths))
+    all_returns = []
+    all_states = []
+    all_actions = []
+
+    pos = 0
+    for ep_idx in range(n_episodes):
+        ep_len = path_lengths[ep_idx]
+        ep_rewards = rewards[pos:pos + ep_len].sum(axis=-1)  # [L]
+        ep_states = state_features[pos:pos + ep_len]         # [L, D]
+        ep_actions = actions[pos:pos + ep_len]               # [L, A]
+
+        # return-to-go
+        rtg = np.zeros(ep_len, dtype=np.float32)
+        cum = 0.0
+        for t in reversed(range(ep_len)):
+            cum = ep_rewards[t] + discount * cum
+            rtg[t] = cum
+
+        all_returns.append(rtg)
+        all_states.append(ep_states)
+        all_actions.append(ep_actions)
+        pos += ep_len
+
+    all_returns = np.concatenate(all_returns, axis=0)   # [N]
+    all_states = np.concatenate(all_states, axis=0)     # [N, D]
+    all_actions = np.concatenate(all_actions, axis=0)   # [N, A]
+
+    return_mean = all_returns.mean()
+    return_std = all_returns.std() + 1e-6
+
+    print(f"  Samples: {len(all_returns):,}")
+    print(f"  Return: [{all_returns.min():.1f}, {all_returns.max():.1f}], mean={return_mean:.1f}")
+
+    info = {
+        "state_dim": state_dim,
+        "n_agents": n_agents,
+        "n_actions": n_actions,
+        "obs_dim": obs_dim,
+        "n_episodes": n_episodes,
+        "return_mean": float(return_mean),
+        "return_std": float(return_std),
+    }
+
+    return all_states, all_actions, all_returns, info

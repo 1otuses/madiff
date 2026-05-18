@@ -138,8 +138,11 @@ dmypy.json
 logs
 output
 demos
+runs
 reference_repos/
 *.png
+*.mp4
+events.out.tfevents.*
 wandb/
 *.pkl
 *.pt
