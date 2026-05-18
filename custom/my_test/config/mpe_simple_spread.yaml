@@ -66,6 +66,8 @@ evaluation:
   save_video: true                # 是否生成视频
   video_dir: "videos"             # 视频保存子目录
   target_return: 20.0             # 评估时的 CFG 目标回报
+  ddim_steps: null                # DDIM 加速步数 (null=完整DDPM, 如 10)
+  ddim_eta: 0.0                   # DDIM 随机因子 (0=确定, 1=去噪强度)
 
 # ------------------------------------------------------------
 # 路径 & 日志

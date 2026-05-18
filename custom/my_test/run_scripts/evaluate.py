@@ -21,8 +21,8 @@ import torch
 # import custom modules
 # ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from diffusion_actor import RiskGuidedDiffusion
-from risk_measures import RiskMeasures
+from model.diffusion_actor import RiskGuidedDiffusion
+from model.risk_measures import RiskMeasures
 
 
 def set_seed(seed: int = 42):
@@ -46,7 +46,7 @@ def make_video_writer(video_dir: str, seed: int, fps: int = 5):
 
     os.makedirs(video_dir, exist_ok=True)
     video_path = os.path.join(video_dir, f"seed_{seed}.mp4")
-    writer = imageio.get_writer(video_path, fps=fps, codec="libx264", quality=8)
+    writer = imageio.get_writer(video_path, fps=fps, codec="libx264", quality=8, macro_block_size=None)
 
     def write_frame(frame: np.ndarray):
         """frame: (H, W, 3) uint8 RGB"""
@@ -122,6 +122,9 @@ def evaluate(
     n_seeds = eval_cfg["n_eval_seeds"]
     n_episodes = eval_cfg["n_eval_episodes"]
     target_return = eval_cfg["target_return"]
+    # DDIM 评估参数 (默认 None 表示使用完整 DDPM)
+    ddim_steps = cfg["evaluation"].get("ddim_steps", None)
+    ddim_eta = cfg["evaluation"].get("ddim_eta", 0.0)
 
     # ---- 1. 构建模型 ----
     print(f"\n[Eval] Building model...")
@@ -213,10 +216,11 @@ def evaluate(
                 cond_t = torch.from_numpy(cond).float().to(device).unsqueeze(0)   # [1, H_hist, A, D]
                 returns_t = torch.tensor([target_return], device=device).float()
 
-                # 扩散采样 (无 risk gradient 时简化)
+                # 扩散采样 (支持 DDIM)
                 with torch.no_grad():
                     traj = model.conditional_sample(
-                        cond_t, returns_t, horizon=horizon
+                        cond_t, returns_t, horizon=horizon,
+                        ddim_steps=ddim_steps, ddim_eta=ddim_eta,
                     )  # [1, H_hist+H, A, D]
 
                 # 逆动力学预测动作
@@ -315,6 +319,10 @@ def main():
     parser.add_argument("--no_video", action="store_true",
                         help="Skip video generation")
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--ddim_steps", type=int, default=None,
+                        help="DDIM sampling steps (default: full DDPM)")
+    parser.add_argument("--ddim_eta", type=float, default=0.0,
+                        help="DDIM eta (0=deterministic)")
     args = parser.parse_args()
 
     import yaml
@@ -323,6 +331,11 @@ def main():
 
     if args.seed is not None:
         cfg["training"]["seed"] = args.seed
+
+    # CLI 参数覆盖 config
+    if args.ddim_steps is not None:
+        cfg.setdefault("evaluation", {})["ddim_steps"] = args.ddim_steps
+        cfg["evaluation"]["ddim_eta"] = args.ddim_eta
 
     set_seed(cfg["training"]["seed"])
     print(f"=== Risk-Guided Diffusion Evaluation ===")

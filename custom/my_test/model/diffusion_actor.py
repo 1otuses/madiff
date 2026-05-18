@@ -228,15 +228,19 @@ class RiskGuidedDiffusion(nn.Module):
         returns: torch.Tensor,
         risk_grad: Optional[torch.Tensor] = None,
         horizon: Optional[int] = None,
+        ddim_steps: Optional[int] = None,
+        ddim_eta: float = 0.0,
         verbose: bool = False,
     ):
         """
-        条件扩散采样。
+        条件扩散采样，支持 DDIM 加速。
 
         cond_obs: [B, history_horizon, A, obs_dim]  历史观测条件
         returns:  [B]  目标回报
         risk_grad: [B, horizon, A, obs_dim]  风险梯度引导 (可选)
         horizon:  预测时间长度 (默认 self.horizon)
+        ddim_steps: DDIM 加速步数 (None=用完整 DDPM)
+        ddim_eta: DDIM η 参数 (0=确定性)
         """
         B = cond_obs.shape[0]
         H = horizon or self.horizon
@@ -250,8 +254,21 @@ class RiskGuidedDiffusion(nn.Module):
         if self.history_horizon > 0:
             x[:, :self.history_horizon] = cond_obs
 
-        # DDPM 逆向采样
-        for t_idx in reversed(range(self.n_timesteps)):
+        # DDIM 采样时间序列
+        if ddim_steps is not None and ddim_steps < self.n_timesteps:
+            # 等间隔选取 ddim_steps 个时间步
+            skip = self.n_timesteps // ddim_steps
+            seq = list(range(0, self.n_timesteps, skip))
+            if seq[-1] != self.n_timesteps - 1:
+                seq.append(self.n_timesteps - 1)
+            timesteps = sorted(seq, reverse=True)
+            ddim = True
+        else:
+            timesteps = reversed(range(self.n_timesteps))
+            ddim = False
+
+        # 逆向扩散采样
+        for t_idx in timesteps:
             t = torch.full((B,), t_idx, device=device, dtype=torch.long)
 
             # 构建全序列 risk_grad (若提供)
@@ -262,22 +279,33 @@ class RiskGuidedDiffusion(nn.Module):
 
             epsilon = self.get_model_output(x, t, returns=returns, risk_grad=rg)
 
-            alpha = self.alphas[t_idx]
             alpha_bar = self.alphas_cumprod[t_idx]
-            beta = self.betas[t_idx]
-
             sqrt_alpha_bar = torch.sqrt(alpha_bar)
             x0_pred = (x - torch.sqrt(1.0 - alpha_bar) * epsilon) / sqrt_alpha_bar
             x0_pred = torch.clamp(x0_pred, -10.0, 10.0)
 
             if t_idx > 0:
-                alpha_bar_prev = self.alphas_cumprod[t_idx - 1]
-                coef1 = torch.sqrt(alpha_bar_prev) * beta / (1.0 - alpha_bar)
-                coef2 = torch.sqrt(alpha) * (1.0 - alpha_bar_prev) / (1.0 - alpha_bar)
-                mean = coef1 * x0_pred + coef2 * x
-                beta_tilde = beta * (1.0 - alpha_bar_prev) / (1.0 - alpha_bar)
-                sigma = torch.sqrt(beta_tilde)
-                x = mean + sigma * torch.randn_like(x)
+                if ddim:
+                    # DDIM 更新 (去噪 + 无随机噪声)
+                    alpha_bar_prev = self.alphas_cumprod[timesteps[timesteps.index(t_idx) + 1]] \
+                        if t_idx != timesteps[-1] else torch.tensor(1.0, device=device)
+                    sqrt_alpha_bar_prev = torch.sqrt(alpha_bar_prev)
+                    sigma = ddim_eta * torch.sqrt(
+                        (1 - alpha_bar_prev) / (1 - alpha_bar) * (1 - alpha_bar / alpha_bar_prev)
+                    )
+                    c1 = torch.sqrt(1.0 - alpha_bar_prev - sigma ** 2)
+                    x = sqrt_alpha_bar_prev * x0_pred + c1 * epsilon + sigma * torch.randn_like(x)
+                else:
+                    # DDPM 更新
+                    alpha = self.alphas[t_idx]
+                    beta = self.betas[t_idx]
+                    alpha_bar_prev = self.alphas_cumprod[t_idx - 1]
+                    coef1 = torch.sqrt(alpha_bar_prev) * beta / (1.0 - alpha_bar)
+                    coef2 = torch.sqrt(alpha) * (1.0 - alpha_bar_prev) / (1.0 - alpha_bar)
+                    mean = coef1 * x0_pred + coef2 * x
+                    beta_tilde = beta * (1.0 - alpha_bar_prev) / (1.0 - alpha_bar)
+                    sigma = torch.sqrt(beta_tilde)
+                    x = mean + sigma * torch.randn_like(x)
             else:
                 x = x0_pred
 

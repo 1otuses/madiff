@@ -23,7 +23,8 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from diffusion_actor import RiskGuidedDiffusion
+from model.diffusion_actor import RiskGuidedDiffusion
+from normalizer import DatasetNormalizer
 
 
 # ===========================================================================
@@ -149,6 +150,20 @@ def train(cfg: dict, device: str = "cuda"):
     )
     print(f"[1/4] Loading MPE data: {data_dir}")
     episodes = load_mpe_data(data_dir, env_cfg["n_agents"], max_episodes=2000)
+
+    # 1b. 构建归一化器 (整个训练集)
+    print("  Building normalizer...")
+    # 收集全部 obs 和 acs 用于拟合归一化参数
+    all_obs = np.concatenate(episodes["obs"], axis=0)  # [total_L, A, obs_dim]
+    all_acs = np.concatenate(episodes["acs"], axis=0)  # [total_L, A, ac_dim]
+    norm_dataset = {"obs": all_obs, "acs": all_acs}
+    normalizer = DatasetNormalizer(
+        norm_dataset,
+        normalizer="LimitsNormalizer",
+        keys=["obs", "acs"],
+        agent_share=True,
+    )
+    del all_obs, all_acs  # 释放内存
 
     # 2. 模型
     print(f"\n[2/4] Building Risk-Guided Diffusion Model...")
