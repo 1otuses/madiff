@@ -83,7 +83,7 @@
 | `run_experiment.py` | 自动串联 train→eval | run_scripts/* |
 | `normalizer.py` | obs/action 归一化 (LimitsNormalizer) | - |
 | `smac_dataset.py` | SMAC 数据加载 + return-to-go 计算 | - |
-| `config/mpe_simple_spread.yaml` | 超参数 | - |
+| `config/mpe_spread_exp.yaml` | 超参数 (see other env/quality configs) | - |
 
 ## 4. 评估指标格式
 

@@ -10,10 +10,10 @@ run_experiment.py — 统一实验管理脚本
 
 使用示例:
   # 单 seed 训练 + 自动评估
-  python custom/my_test/run_experiment.py -c custom/my_test/config/mpe_simple_spread.yaml
+    python custom/my_test/run_experiment.py -c custom/my_test/config/mpe_spread_exp.yaml
 
   # 多 seed 运行
-  python custom/my_test/run_experiment.py -c custom/my_test/config/mpe_simple_spread.yaml --seeds 100,200,300
+    python custom/my_test/run_experiment.py -c custom/my_test/config/mpe_spread_exp.yaml --seeds 100,200,300
 """
 
 import argparse
@@ -80,10 +80,17 @@ def main():
     n_train_steps = cfg["training"]["n_train_steps"]
     eval_freq = cfg["evaluation"]["eval_freq"]
     env_name = cfg["env"]["env_name"]
-    save_dir = cfg["paths"]["save_dir"].format(env_name=env_name)
+    quality = cfg["env"]["quality"]
+    save_dir = cfg["paths"]["save_dir"].format(
+        env_name=env_name,
+        quality=quality,
+    )
     checkpoint_dir = cfg["paths"].get(
         "checkpoint_dir", os.path.join(save_dir, "checkpoint")
-    ).format(env_name=env_name)
+    ).format(
+        env_name=env_name,
+        quality=quality,
+    )
     python = resolve_python()
 
     # ---- seeds ----
@@ -113,8 +120,11 @@ def main():
 
         # ---- 训练 ----
         if not args.skip_train:
+            train_script = cfg.get("meta_data", {}).get(
+                "script_path", "custom/my_test/run_scripts/train.py"
+            )
             train_cmd = [
-                python, "custom/my_test/run_scripts/train.py",
+                python, train_script,
                 "-c", args.config,
                 "--device", args.device,
                 "--seed", str(seed),
@@ -138,8 +148,11 @@ def main():
             print(f"  No checkpoint found at {save_dir}, skipping evaluation.")
             continue
 
+        eval_script = cfg.get("meta_data", {}).get(
+            "eval_script_path", "custom/my_test/run_scripts/evaluate.py"
+        )
         eval_cmd = [
-            python, "custom/my_test/run_scripts/evaluate.py",
+            python, eval_script,
             "-c", args.config,
             "--checkpoint", checkpoint,
             "--device", args.device,

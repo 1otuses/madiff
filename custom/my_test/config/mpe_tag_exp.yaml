@@ -1,0 +1,62 @@
+# MPE config: simple_tag (expert)
+# Usage: python custom/my_test/run_experiment.py -c custom/my_test/config/mpe_tag_exp.yaml
+
+meta_data:
+  exp_name: "my_test_mpe_tag_exp"
+  script_path: "custom/my_test/run_scripts/train.py"
+  eval_script_path: "custom/my_test/run_scripts/evaluate.py"
+  num_workers: 1
+  gpu: 0
+
+env:
+  env_type: "mpe"
+  env_name: "simple_tag"
+  quality: "expert"
+  n_agents: 3
+  obs_dim: 16
+  action_dim: 2
+  n_actions: 2
+  max_path_length: 25
+
+model:
+  horizon: 10
+  history_horizon: 2
+  n_timesteps: 100
+  hidden_dim: 256
+  n_blocks: 4
+  use_returns_condition: true
+  use_risk_guide: false
+  condition_guidance_w: 1.2
+  risk_guidance_w: 0.5
+  risk_type: "cvar"
+  risk_alpha: 0.1
+  share_inv: true
+
+training:
+  n_train_steps: 100000
+  batch_size: 32
+  learning_rate: 0.0002
+  gradient_accumulate_every: 2
+  ema_decay: 0.995
+  log_freq: 100
+  save_freq: 50000
+  sample_freq: 10000
+  seed: 100
+  discount: 0.997
+  returns_scale: 1000.0
+
+evaluation:
+  eval_freq: 100000
+  n_eval_episodes: 10
+  n_eval_seeds: 3
+  save_video: true
+  video_dir: "videos"
+  target_return: 20.0
+  ddim_steps: null
+  ddim_eta: 0.0
+
+paths:
+  data_dir: "diffuser/datasets/data/mpe/{env_name}/{quality}"
+  save_dir: "runs/my_test/{env_name}/{quality}"
+  checkpoint_dir: "runs/my_test/{env_name}/{quality}/checkpoint"
+  tb_dir: "runs/my_test/{env_name}/{quality}/tensorboard"

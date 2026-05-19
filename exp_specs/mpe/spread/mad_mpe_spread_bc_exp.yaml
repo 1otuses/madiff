@@ -1,0 +1,35 @@
+meta_data:
+  exp_name: "mad_mpe_bc"
+  script_path: "run_scripts/train_bc.py"
+  num_workers: 1
+  job_name: "{dataset}/bc-lr_{learning_rate}-bs_{batch_size}"
+
+variables:
+  seed: [100, 200, 300, 400, 500]
+  dataset: ["simple_spread-expert"]
+
+constants:
+  env_type: "mpe"
+  n_agents: 3
+
+  # dataset
+  loader: "datasets.BCSequenceDataset"
+  normalizer: "CDFNormalizer"
+  preprocess_fns: []
+  max_n_episodes: 200000
+  max_path_length: 25
+
+  # model
+  model: "models.SharedBCMLPnet"
+
+  # training (match official defaults from MADiff exp specs)
+  n_train_steps: 1000000
+  batch_size: 32
+  learning_rate: 0.0002
+  log_freq: 1000
+  save_freq: 50000
+  eval_freq: 100000
+  num_eval: 10
+  save_checkpoints: True
+  continue_training: True
+  use_tensorboard: True

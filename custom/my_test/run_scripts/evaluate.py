@@ -172,7 +172,10 @@ def evaluate(
     seed_returns = defaultdict(list)
     seed_returns_sum = defaultdict(list)
 
-    save_dir = path_cfg["save_dir"].format(env_name=env_cfg["env_name"])
+    save_dir = path_cfg["save_dir"].format(
+        env_name=env_cfg["env_name"],
+        quality=env_cfg["quality"],
+    )
     eval_dir = os.path.join(save_dir, "eval")
     os.makedirs(eval_dir, exist_ok=True)
 
@@ -208,13 +211,19 @@ def evaluate(
                 frame = render_mpe_frame(env)
                 write_frame(frame)
 
+            # RTG 参数（对齐训练时的归一化）
+            discount = cfg["training"].get("discount", 0.997)
+            return_scale = cfg["training"].get("returns_scale", 1000.0)
+            # 评估起点: 归一化的 target_return
+            target_return_norm = target_return / return_scale
+
             step_count = 0
 
             while (not np.all(done)) and step_count < max_steps:
-                # 构建条件
+                # 构建条件: 归一化后的 RTG
                 cond = np.stack(obs_history[-history_horizon:], axis=0)  # [H_hist, A, D]
                 cond_t = torch.from_numpy(cond).float().to(device).unsqueeze(0)   # [1, H_hist, A, D]
-                returns_t = torch.tensor([target_return], device=device).float()
+                returns_t = torch.tensor([target_return_norm], device=device).float()
 
                 # 扩散采样 (支持 DDIM)
                 with torch.no_grad():
@@ -243,6 +252,17 @@ def evaluate(
                     reward_arr = np.full(n_agents, reward, dtype=np.float32)
                 ep_return += reward_arr
                 step_count += 1
+
+                # ---- 动态更新 RTG ----
+                # 应用 MADiff 论文的 return-to-go 更新:
+                #   rtg_new = (rtg_old * returns_scale - reward) / discount / returns_scale
+                #   (如 diffuser/utils/evaluator.py Line 222-227)
+                reward_tensor = torch.tensor(
+                    reward_arr.mean(), device=device, dtype=torch.float32
+                )
+                returns_t = returns_t * return_scale   # 代码内部保留先前的 RTG 值
+                returns_t = (returns_t - reward_tensor) / discount
+                target_return_norm = (returns_t / return_scale).item()
 
                 # 渲染帧
                 if write_frame is not None:

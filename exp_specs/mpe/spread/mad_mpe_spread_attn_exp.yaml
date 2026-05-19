@@ -7,9 +7,9 @@ meta_data:
 variables:
   seed: [100, 200, 300, 400, 500]
 
-  horizon: [24]
+  horizon: [24] # 预测时间长度
 
-  returns_scale: [700]
+  returns_scale: [700] 
   dataset: ["simple_spread-expert"]
   condition_guidance_w: [1.2]
 
@@ -31,7 +31,7 @@ constants:
   model: "models.SharedConvAttentionDeconv"
   diffusion: "models.GaussianDiffusion"
   share_inv: True
-  history_horizon: 0
+  history_horizon: 0 
   n_diffusion_steps: 200
   action_weight: 10
   loss_weights: null

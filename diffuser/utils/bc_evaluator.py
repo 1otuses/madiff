@@ -1,4 +1,5 @@
 import gc
+import json
 import multiprocessing
 import os
 import pickle
@@ -11,6 +12,7 @@ from multiprocessing.context import Process
 import numpy as np
 import torch
 from ml_logger import logger
+from torch.utils.tensorboard import SummaryWriter
 
 import diffuser.utils as utils
 from diffuser.utils.arrays import to_np, to_torch
@@ -98,17 +100,45 @@ class BCEvaluatorWorker(Process):
         recorded_obs = np.concatenate(recorded_obs, axis=1)
         episode_rewards = np.array(episode_rewards)
 
+        avg_ep_reward = np.mean(episode_rewards, axis=0)
+        std_ep_reward = np.std(episode_rewards, axis=0)
+        overall_mean = np.mean(episode_rewards.sum(axis=1))
+        overall_std = np.std(episode_rewards.sum(axis=1))
+
         logger.print(
-            f"average_ep_reward: {np.mean(episode_rewards, axis=0)}, std_ep_reward: {np.std(episode_rewards, axis=0)}",
+            "average_ep_reward: {} | std_ep_reward: {} | overall_mean: {:.2f} | overall_std: {:.2f}".format(
+                avg_ep_reward, std_ep_reward, overall_mean, overall_std
+            ),
             color="green",
         )
-        logger.save_json(
-            {
-                "average_ep_reward": np.mean(episode_rewards, axis=0).tolist(),
-                "std_ep_reward": np.std(episode_rewards, axis=0).tolist(),
-            },
-            f"results/step_{load_step}.json",
-        )
+
+        results_dir = os.path.join(self.log_dir, "results")
+        os.makedirs(results_dir, exist_ok=True)
+        results_path = os.path.join(results_dir, f"step_{load_step}.json")
+        with open(results_path, "w") as f:
+            json.dump(
+                {
+                    "average_ep_reward": avg_ep_reward.tolist(),
+                    "std_ep_reward": std_ep_reward.tolist(),
+                    "overall_mean": float(overall_mean),
+                    "overall_std": float(overall_std),
+                },
+                f,
+                indent=2,
+            )
+
+        if self.tb_writer is not None and load_step is not None:
+            self.tb_writer.add_scalar("Eval/overall_mean", overall_mean, load_step)
+            self.tb_writer.add_scalar("Eval/overall_std", overall_std, load_step)
+            for idx, val in enumerate(avg_ep_reward):
+                self.tb_writer.add_scalar(
+                    f"Eval/average_ep_reward_agent_{idx}", val, load_step
+                )
+            for idx, val in enumerate(std_ep_reward):
+                self.tb_writer.add_scalar(
+                    f"Eval/std_ep_reward_agent_{idx}", val, load_step
+                )
+            self.tb_writer.flush()
 
     def _init(self, log_dir, **kwargs):
         assert self.initialized is False, "Evaluator can only be initialized once."
@@ -161,6 +191,9 @@ class BCEvaluatorWorker(Process):
         self.env_list = [
             load_environment(Config.dataset) for _ in range(Config.num_eval)
         ]
+        tb_log_dir = os.path.join(self.log_dir, "tensorboard")
+        os.makedirs(tb_log_dir, exist_ok=True)
+        self.tb_writer = SummaryWriter(log_dir=tb_log_dir)
         self.initialized = True
 
     def run(self):
@@ -180,6 +213,8 @@ class BCEvaluatorWorker(Process):
                 elif cmd == "evaluate":
                     self._evaluate(**data)
                 elif cmd == "close":
+                    if hasattr(self, "tb_writer") and self.tb_writer is not None:
+                        self.tb_writer.close()
                     self.p.send("closed")
                     self.p.close()
                     # self.queue.shutdown()

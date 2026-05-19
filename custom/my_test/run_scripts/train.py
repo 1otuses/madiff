@@ -90,12 +90,31 @@ def load_mpe_data(data_dir: str, n_agents: int, max_episodes: int = 5000):
     return all_episodes
 
 
-def build_trajectory_batch(episodes, horizon, n_agents, obs_dim, ac_dim, batch_size):
+def build_trajectory_batch(episodes, horizon, n_agents, obs_dim, ac_dim, batch_size,
+                          discount: float = 1.0, return_scale: float = 1.0):
+    """
+    在 episode 段上采样并计算完整的 Return-to-Go（对齐 MADiff 的 RTG）。
+
+    Args:
+        episodes: 'obs', 'next_obs', 'acs', 'rews' 列表
+        horizon: 采样时间长度 T
+        n_agents: agent 数量
+        obs_dim: 观测维度
+        ac_dim: 动作维度
+        batch_size: 批大小
+        discount: 折扣因子 γ
+        return_scale: RTG 归一化缩放 (用于将 RTG 压缩到 [0,1] 范围)
+
+    Returns:
+        x_batch: [B, T, A, obs_dim] 状态序列
+        actions_batch: [B, T-1, A, ac_dim] 动作序列
+        returns_batch: [B, n_agents] 归一化后的 RTG
+    """
     n_episodes = len(episodes["obs"])
     B = batch_size
     x_batch = np.zeros((B, horizon, n_agents, obs_dim), dtype=np.float32)
     actions_batch = np.zeros((B, horizon - 1, n_agents, ac_dim), dtype=np.float32)
-    returns_batch = np.zeros(B, dtype=np.float32)
+    returns_batch = np.zeros((B, n_agents), dtype=np.float32)
 
     for i in range(B):
         ep_idx = np.random.randint(0, n_episodes)
@@ -112,7 +131,22 @@ def build_trajectory_batch(episodes, horizon, n_agents, obs_dim, ac_dim, batch_s
         x_batch[i, :seg_len] = ep_obs[start:end]
         if seg_len > 1:
             actions_batch[i, :seg_len - 1] = ep_acs[start:end - 1]
-        returns_batch[i] = ep_rews[start:end].sum()
+
+        # RTG: 从此段起点开始的完整未来折扣回报
+        rew_segment = ep_rews[start:]     # [L_remain, A]
+        L_remain = len(rew_segment)
+        rtg = np.zeros((L_remain, n_agents), dtype=np.float32)
+        discounted = np.zeros(n_agents, dtype=np.float32)
+        for t in reversed(range(L_remain)):
+            discounted = rew_segment[t] + discount * discounted
+            rtg[t] = discounted
+        # 取片段起点处的 RTG
+        rtg_start = rtg[0]  # [n_agents]
+        # 归一化到 [0,1]
+        returns_batch[i] = rtg_start / return_scale
+
+    # 将 returns 从 [B, n_agents] reshape 成 [B, 1] 以配合 denoiser 输入
+    returns_batch = returns_batch.mean(axis=-1, keepdims=True)  # [B, 1]
     return x_batch, actions_batch, returns_batch
 
 
@@ -196,11 +230,20 @@ def train(cfg: dict, device: str = "cuda"):
     optimizer = Adam(model.parameters(), lr=train_cfg["learning_rate"])
 
     # 3. 路径
-    save_dir = path_cfg["save_dir"].format(env_name=env_cfg["env_name"])
-    tb_dir = path_cfg["tb_dir"].format(env_name=env_cfg["env_name"])
+    save_dir = path_cfg["save_dir"].format(
+        env_name=env_cfg["env_name"],
+        quality=env_cfg["quality"],
+    )
+    tb_dir = path_cfg["tb_dir"].format(
+        env_name=env_cfg["env_name"],
+        quality=env_cfg["quality"],
+    )
     checkpoint_dir = path_cfg.get(
         "checkpoint_dir", os.path.join(save_dir, "checkpoint")
-    ).format(env_name=env_cfg["env_name"])
+    ).format(
+        env_name=env_cfg["env_name"],
+        quality=env_cfg["quality"],
+    )
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(tb_dir, exist_ok=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -216,6 +259,9 @@ def train(cfg: dict, device: str = "cuda"):
     n_agents = env_cfg["n_agents"]
     obs_dim = env_cfg["obs_dim"]
     ac_dim = env_cfg["action_dim"]
+    # RTG 参数（对齐 MADiff）
+    discount = train_cfg.get("discount", 0.997)
+    return_scale = train_cfg.get("returns_scale", 1000.0)
     step_start_ema = 2000
 
     # 自适应 log_freq: 确保在 n_train_steps 中至少有 20 个日志点
@@ -235,7 +281,8 @@ def train(cfg: dict, device: str = "cuda"):
         optimizer.zero_grad()
         for _ in range(accumulate_every):
             x_np, actions_np, returns_np = build_trajectory_batch(
-                episodes, horizon, n_agents, obs_dim, ac_dim, batch_size
+                episodes, horizon, n_agents, obs_dim, ac_dim, batch_size,
+                discount=discount, return_scale=return_scale,
             )
             x = torch.from_numpy(x_np).float().to(device)
             actions = torch.from_numpy(actions_np).float().to(device)

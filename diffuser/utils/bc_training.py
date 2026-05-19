@@ -2,6 +2,7 @@ import os
 
 import torch
 from ml_logger import logger
+from torch.utils.tensorboard import SummaryWriter
 
 from .arrays import batch_to_device
 from .timer import Timer
@@ -26,6 +27,7 @@ class BCTrainer(object):
         bucket=None,
         train_device="cuda",
         save_checkpoints=False,
+        use_tensorboard=True,
     ):
         super().__init__()
         self.model = bc_model
@@ -65,6 +67,18 @@ class BCTrainer(object):
         self.evaluator = None
         self.device = train_device
 
+        self.use_tensorboard = use_tensorboard
+        if self.use_tensorboard:
+            if self.bucket is None:
+                tb_log_dir = os.path.join("runs", "bc", "tensorboard")
+            else:
+                tb_log_dir = os.path.join(self.bucket, logger.prefix, "tensorboard")
+            os.makedirs(tb_log_dir, exist_ok=True)
+            self.tb_writer = SummaryWriter(log_dir=tb_log_dir)
+            logger.print(f"[ utils/bc_training ] TensorBoard logs at: {tb_log_dir}")
+        else:
+            self.tb_writer = None
+
     def set_evaluator(self, evaluator):
         self.evaluator = evaluator
 
@@ -75,6 +89,9 @@ class BCTrainer(object):
             self.evaluate()
         if self.evaluator is not None:
             del self.evaluator
+        if self.tb_writer is not None:
+            self.tb_writer.close()
+            logger.print("[ utils/bc_training ] TensorBoard writer closed.")
 
     # -----------------------------------------------------------------------------#
     # ------------------------------------ api ------------------------------------#
@@ -99,7 +116,14 @@ class BCTrainer(object):
 
             if self.step % self.log_freq == 0:
                 logger.print(f"{self.step}: {loss:8.4f} | t: {timer():8.4f}")
-                logger.log(step=self.step, loss=loss.detach().item(), flush=True)
+                if self.tb_writer is not None:
+                    self.tb_writer.add_scalar(
+                        "Loss/total", loss.detach().item(), self.step
+                    )
+                    for key, val in infos.items():
+                        self.tb_writer.add_scalar(
+                            f"Loss/{key}", val.detach().item(), self.step
+                        )
 
             self.step += 1
 
