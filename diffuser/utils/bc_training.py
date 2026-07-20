@@ -2,7 +2,7 @@ import os
 
 import torch
 from ml_logger import logger
-from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from .arrays import batch_to_device
 from .timer import Timer
@@ -28,6 +28,9 @@ class BCTrainer(object):
         train_device="cuda",
         save_checkpoints=False,
         use_tensorboard=True,
+        show_progress=True,
+        progress_position=0,
+        progress_desc="bc-train",
     ):
         super().__init__()
         self.model = bc_model
@@ -66,9 +69,14 @@ class BCTrainer(object):
 
         self.evaluator = None
         self.device = train_device
+        self.show_progress = show_progress
+        self.progress_position = progress_position
+        self.progress_desc = progress_desc
 
         self.use_tensorboard = use_tensorboard
         if self.use_tensorboard:
+            from torch.utils.tensorboard import SummaryWriter
+
             if self.bucket is None:
                 tb_log_dir = os.path.join("runs", "bc", "tensorboard")
             else:
@@ -99,10 +107,22 @@ class BCTrainer(object):
 
     def train(self, n_train_steps):
         timer = Timer()
-        for step in range(n_train_steps):
+        progress = tqdm(
+            range(n_train_steps),
+            desc=self.progress_desc,
+            disable=not self.show_progress,
+            dynamic_ncols=True,
+            leave=True,
+            position=self.progress_position,
+        )
+
+        for _ in progress:
             batch = next(self.dataloader)
             batch = batch_to_device(batch, device=self.device)
-            loss, infos = self.model.loss(*batch)
+            loss, infos = self.model.loss(
+                batch["observations"],
+                batch["actions"],
+            )
             loss.backward()
 
             self.optimizer.step()
@@ -115,6 +135,11 @@ class BCTrainer(object):
                 self.evaluate()
 
             if self.step % self.log_freq == 0:
+                progress.set_postfix(
+                    step=self.step,
+                    loss=f"{loss.detach().item():.4f}",
+                    refresh=False,
+                )
                 logger.print(f"{self.step}: {loss:8.4f} | t: {timer():8.4f}")
                 if self.tb_writer is not None:
                     self.tb_writer.add_scalar(

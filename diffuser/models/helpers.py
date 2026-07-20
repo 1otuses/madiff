@@ -10,7 +10,7 @@ from einops.layers.torch import Rearrange
 import diffuser.utils as utils
 
 # -----------------------------------------------------------------------------#
-# ---------------------------------- modules ----------------------------------#
+# ---------------------------------- 模型模块 ----------------------------------#
 # -----------------------------------------------------------------------------#
 
 
@@ -49,7 +49,7 @@ class Upsample1d(nn.Module):
 
 class Conv1dBlock(nn.Module):
     """
-    Conv1d --> GroupNorm --> Mish
+    Conv1d --> GroupNorm --> Mish 的一维卷积块。
     """
 
     def __init__(self, inp_channels, out_channels, kernel_size, mish=True, n_groups=8):
@@ -125,12 +125,12 @@ class SelfAttention(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    """Positional encoding."""
+    """位置编码。"""
 
     def __init__(self, num_hiddens, dropout: float = 0, max_len: int = 1000):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        # Create a long enough P
+        # 创建足够长的位置编码表 P。
         self.P = torch.zeros((1, max_len, num_hiddens))
         X = torch.arange(max_len, dtype=torch.float32).reshape(-1, 1) / torch.pow(
             10000, torch.arange(0, num_hiddens, 2, dtype=torch.float32) / num_hiddens
@@ -181,7 +181,7 @@ class MlpSelfAttention(nn.Module):
 
 
 # -----------------------------------------------------------------------------#
-# ---------------------------------- sampling ---------------------------------#
+# ---------------------------------- 采样工具 ----------------------------------#
 # -----------------------------------------------------------------------------#
 
 
@@ -196,7 +196,7 @@ def apply_conditioning(x, conditions):
     x[cond_masks] = conditions["x"][cond_masks].clone()
 
     if "player_idxs" in conditions.keys():
-        if x.shape[-1] < 4:  # pure position information w.o. player info
+        if x.shape[-1] < 4:  # 只有位置信息，不包含球员信息。
             x = torch.cat([conditions["player_idxs"], x], dim=-1)
             x = torch.cat([x, conditions["player_hoop_sides"]], dim=-1)
         else:
@@ -207,7 +207,7 @@ def apply_conditioning(x, conditions):
 
 
 # -----------------------------------------------------------------------------#
-# ---------------------------------- losses -----------------------------------#
+# ---------------------------------- 损失函数 ----------------------------------#
 # -----------------------------------------------------------------------------#
 
 
@@ -219,11 +219,11 @@ class WeightedLoss(nn.Module):
 
     def forward(self, pred, targ):
         """
-        pred, targ : tensor
+        pred, targ : 张量
             [ batch_size x horizon x transition_dim ]
         """
         loss = self._loss(pred, targ)
-        # weighted_loss = (loss * self.weights).mean()
+        # 加权损失 = (loss * self.weights).mean()
         if self.action_dim > 0:
             a0_loss = (
                 loss[:, 0, : self.action_dim] / self.weights[0, : self.action_dim]
@@ -232,7 +232,7 @@ class WeightedLoss(nn.Module):
         else:
             info = {}
         return loss * self.weights, info
-        # return weighted_loss, {"a0_loss": a0_loss}
+        # return 加权损失, {"a0_loss": a0_loss}
 
 
 class WeightedStateLoss(nn.Module):
@@ -242,13 +242,13 @@ class WeightedStateLoss(nn.Module):
 
     def forward(self, pred, targ):
         """
-        pred, targ : tensor
+        pred, targ : 张量
             [ batch_size x horizon x transition_dim ]
         """
         loss = self._loss(pred, targ)
         weighted_loss = (loss * self.weights).mean()
         return loss * self.weights, {"a0_loss": weighted_loss}
-        # return weighted_loss, {"a0_loss": weighted_loss}
+        # return 加权损失, {"a0_loss": weighted_loss}
 
 
 class ValueLoss(nn.Module):

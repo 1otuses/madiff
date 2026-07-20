@@ -1,19 +1,38 @@
 meta_data:
   exp_name: "eval_inv"
   script_path: "run_scripts/evaluate.py"
-  num_workers: 1
+  num_workers: 2
 
 variables:
   log_dir: [
-    "logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/100",
-    "logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/200",
+    # "logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/100",
+    # "logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/200",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_smac/3m-Good/h_4-hh_20-models.SharedConvAttentionDeconv-r_20-guidew_1.2-ctde_False/100",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/100",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/200",
+    "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/300",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/400",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/500",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_True/200",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_world-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_True/100",
+    # "/home/lotus/lotus/lhh/madiff/logs/mad_mpe/simple_tag-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_True/100"
   ]
 
 constants:
-  load_steps: [0]
+  # load_steps: [0, 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000]
+  load_steps: [1000000]
   num_eval: 10
-  num_envs: 10
+  num_envs: 1
   evaluator: "utils.MADEvaluator"
   overwrite: True
   use_ddim_sample: True
   n_ddim_steps: 15
+  use_tensorboard: False # 评估时不使用 tensorboard记录曲线
+  
+  save_eval_plan_images: True  # 测试图片
+  eval_plan_num_episodes: 1 # 评估时的episode数
+  eval_plan_plot_steps: [0, 4, 12, 18]
+  eval_plan_grid_cols: 2
+  eval_plan_rollout_horizon: 25
+  eval_plan_anchor_start: True
+  save_eval_plan_npz: False

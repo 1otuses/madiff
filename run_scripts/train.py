@@ -1,5 +1,10 @@
 import argparse
 import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import diffuser.utils as utils
 import torch
@@ -157,6 +162,9 @@ def main(Config, RUN):
         n_reference=Config.n_reference,
         train_device=Config.device,
         save_checkpoints=Config.save_checkpoints,
+        show_progress=getattr(Config, "show_progress", True),
+        progress_position=getattr(Config, "exp_id", 0),
+        progress_desc=f"{Config.dataset} | seed={Config.seed}",
     )
 
     evaluator_config = utils.Config(
@@ -211,8 +219,12 @@ def main(Config, RUN):
     n_epochs = int((Config.n_train_steps - trainer.step) // Config.n_steps_per_epoch)
 
     for i in range(n_epochs):
-        logger.print(f"Epoch {i} / {n_epochs} | {logger.prefix}")
-        trainer.train(n_train_steps=Config.n_steps_per_epoch)
+        logger.print(f"Epoch {i + 1} / {n_epochs} | {logger.prefix}")
+        trainer.train(
+            n_train_steps=Config.n_steps_per_epoch,
+            epoch=i,
+            total_epochs=n_epochs,
+        )
     trainer.finish_training()
 
 

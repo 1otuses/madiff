@@ -36,7 +36,7 @@ def test_history_conditioned_dataset():
 
 
 def test_smac_dataset():
-    from diffuser.datasets.smac import load_environment, sequence_dataset
+    from diffuser.datasets.smac_env import load_environment, sequence_dataset
 
     env = load_environment("3m-Good")
     itr = sequence_dataset(env, [])

@@ -5,6 +5,8 @@ import gym
 import numpy as np
 from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
 
+from diffuser.datasets.paths import get_dataset_path
+
 DISTRIBUTION_CONFIGS = {
     "terran_5_vs_5": {
         "n_units": 5,
@@ -207,9 +209,8 @@ def load_environment(name, **kwargs):
 
 
 def sequence_dataset(env, preprocess_fn):
-    dataset_path = os.path.join(
-        os.path.dirname(__file__),
-        "data/smacv2",
+    dataset_path = get_dataset_path(
+        "smacv2",
         env.metadata["name"],
         env.metadata["data_split"],
     )

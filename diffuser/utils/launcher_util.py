@@ -8,6 +8,8 @@ from params_proto.neo_proto import ParamsProto
 
 assert instr  # single-entry for the instrumentation thunk factory
 RUN.project = "diffuser"
+# RUN.prefix contributes the experiment-specific ``logs/...`` suffix, so all
+# run artifacts stay below this checkout.
 RUN.script_root = os.path.abspath(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 )

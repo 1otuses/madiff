@@ -29,7 +29,7 @@ def analyze_mamujoco_dataset(env_name):
     │   └── dones.npy    # (n_steps, n_agents)
     """
     
-    dataset_root = Path(f"/home/lotus/data/vs_code_project/madiff/diffuser/datasets/data/mamujoco/{env_name}")
+    dataset_root = Path(f"/home/lotus/lotus/lhh/offline_datasets/OG-MARL/mamujoco/{env_name}")
     
     print("=" * 80)
     print(f"{env_name.upper()} 离线数据集分析")

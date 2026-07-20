@@ -96,7 +96,9 @@ class SequenceDataset(torch.utils.data.Dataset):
             global_feats=self.global_feats,
             use_zero_padding=self.use_zero_padding,
         )
-        for _, episode in enumerate(itr):
+        for episode_idx, episode in enumerate(itr):
+            if episode_idx >= max_n_episodes:
+                break
             fields.add_path(episode)
         fields.finalize()
 

@@ -5,7 +5,7 @@ meta_data:
   job_name: "{dataset}/h_{horizon}-{model}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
 
 variables:
-  seed: [100, 200, 300, 400, 500]
+  seed: [500]
 
   horizon: [24] # 预测时间长度
 
@@ -24,13 +24,13 @@ constants:
   decentralized_execution: False
   use_zero_padding: False
   pred_future_padding: True
-  use_ddim_sample: False
+  use_ddim_sample: True
   n_ddim_steps: 15
 
   # model
   model: "models.SharedConvAttentionDeconv"
   diffusion: "models.GaussianDiffusion"
-  share_inv: True
+  share_inv: True # 共享逆动力学模型
   history_horizon: 0 
   n_diffusion_steps: 200
   action_weight: 10
@@ -73,7 +73,6 @@ constants:
   save_parallel: False
   n_reference: 3
   save_checkpoints: True
-  use_tensorboard: True
 
   # eval
   evaluator: "utils.MADEvaluator"

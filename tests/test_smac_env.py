@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from diffuser.datasets.smac import SMAC
+from diffuser.datasets.smac_env import SMAC
 
 
 @pytest.mark.parametrize("map_name", ["3m"])

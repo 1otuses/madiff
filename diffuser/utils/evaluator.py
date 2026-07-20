@@ -19,6 +19,7 @@ from ml_logger import logger
 import diffuser.utils as utils
 from diffuser.utils.arrays import to_device, to_np, to_torch
 from diffuser.utils.launcher_util import build_config_from_dict
+from diffuser.utils.mpe_plan_visualization import save_mpe_plan_visualizations
 
 
 class MADEvaluatorWorker(Process):
@@ -36,7 +37,7 @@ class MADEvaluatorWorker(Process):
         self.verbose = verbose
         super().__init__()
 
-    def _generate_samples(self, obs, returns, env_ts):
+    def _generate_samples(self, obs, returns, env_ts, return_plan_samples: bool = False,):
         Config = self.Config
 
         env_ts = env_ts.clone()
@@ -107,10 +108,11 @@ class MADEvaluatorWorker(Process):
             joint_samples = einops.rearrange(
                 joint_samples, "(b a) ... -> b a ...", a=Config.n_agents
             )
+            plan_samples = joint_samples[:, :, Config.history_horizon :]
 
             samples = []
             for a_idx in range(Config.n_agents):
-                samples.append(joint_samples[:, a_idx, ..., a_idx, :])
+                samples.append(plan_samples[:, a_idx, :, a_idx, :])
             samples = torch.stack(samples, dim=-2)
 
         else:
@@ -130,11 +132,18 @@ class MADEvaluatorWorker(Process):
                 env_ts=env_ts,
                 attention_masks=attention_masks,
             )
+            samples = samples[:, Config.history_horizon :]
+            plan_samples = samples
 
-        samples = samples[:, Config.history_horizon :]
+        if return_plan_samples:
+            return samples, plan_samples
         return samples
 
-    def _evaluate(self, load_step: Optional[int] = None):
+    def _evaluate(
+        self,
+        load_step: Optional[int] = None,
+        save_eval_plan_images: Optional[bool] = None,
+    ):
         assert (
             self.initialized is True
         ), "Evaluator should be initialized before evaluation."
@@ -166,6 +175,9 @@ class MADEvaluatorWorker(Process):
         self.trainer.model.load_state_dict(state_dict["model"])
         self.trainer.ema_model.load_state_dict(state_dict["ema"])
 
+        if save_eval_plan_images is None:
+            save_eval_plan_images = getattr(Config, "save_eval_plan_images", False)
+
         num_eval = Config.num_eval
         num_envs = Config.num_envs
 
@@ -176,10 +188,25 @@ class MADEvaluatorWorker(Process):
         cur_num_eval = 0
         while cur_num_eval < num_eval:
             num_episodes = min(num_eval - cur_num_eval, num_envs)
-            rets = self._episodic_eval(num_episodes=num_episodes)
+            is_final_eval_batch = cur_num_eval + num_episodes >= num_eval
+            capture_plan_rollouts = (
+                save_eval_plan_images
+                and Config.env_type == "mpe"
+                and is_final_eval_batch
+            )
+            rets = self._episodic_eval(
+                num_episodes=num_episodes,
+                capture_plan_rollouts=capture_plan_rollouts,
+            )
             episode_rewards.append(rets[1])
             if Config.env_type == "smac" or Config.env_type == "smacv2":
                 episode_wins.append(rets[2])
+            if capture_plan_rollouts and self.latest_plan_rollouts is not None:
+                self._save_eval_plan_images(
+                    load_step=load_step,
+                    plan_rollouts=self.latest_plan_rollouts,
+                    batch_start_episode_idx=cur_num_eval,
+                )
 
             cur_num_eval += num_episodes
 
@@ -215,6 +242,68 @@ class MADEvaluatorWorker(Process):
             },
             save_file_path,
         )
+        self._write_eval_tensorboard(metrics_dict, load_step)
+
+    def _write_eval_tensorboard(self, metrics_dict: dict, load_step: Optional[int]):
+        """把评估指标写入单独的 TensorBoard/evaluate 目录。"""
+        if load_step is None or self.eval_tb_writer is None:
+            return
+
+        if "average_ep_reward" in metrics_dict:
+            average_returns = np.asarray(metrics_dict["average_ep_reward"])
+            self.eval_tb_writer.add_scalar(
+                "AverageReturns/mean",
+                float(average_returns.mean()),
+                load_step,
+            )
+            for agent_idx, agent_return in enumerate(average_returns.reshape(-1)):
+                self.eval_tb_writer.add_scalar(
+                    f"AverageReturns/agent_{agent_idx}",
+                    float(agent_return),
+                    load_step,
+                )
+
+        if "win_rate" in metrics_dict:
+            self.eval_tb_writer.add_scalar(
+                "Eval/win_rate",
+                float(metrics_dict["win_rate"]),
+                load_step,
+            )
+
+        self.eval_tb_writer.flush()
+
+    def _save_eval_plan_images(
+        self,
+        load_step: Optional[int],
+        plan_rollouts: dict,
+        batch_start_episode_idx: int,
+    ) -> int:
+        """把评估中的真实轨迹和 DM 预测轨迹保存为 PNG"""
+        Config = self.Config
+        if Config.env_type != "mpe":
+            logger.print("eval plan image is only implemented for MPE.", color="yellow")
+            return 0
+
+        max_to_save = max(0, getattr(Config, "eval_plan_num_episodes", 1))
+        if max_to_save == 0:
+            return 0
+
+        saved_paths = save_mpe_plan_visualizations(
+            log_dir=self.log_dir,
+            load_step=load_step,
+            plan_rollouts=plan_rollouts,
+            batch_start_episode_idx=batch_start_episode_idx,
+            max_to_save=max_to_save,
+            plot_steps=getattr(Config, "eval_plan_plot_steps", [0, 4]),
+            rollout_horizon=getattr(Config, "eval_plan_rollout_horizon", Config.horizon),
+            anchor_plan_start=getattr(Config, "eval_plan_anchor_start", True),
+            grid_cols=getattr(Config, "eval_plan_grid_cols", None),
+            save_npz=getattr(Config, "save_eval_plan_npz", False),
+        )
+        for image_path in saved_paths:
+            logger.print(f"Saved eval plan image to: {image_path}", color="green")
+
+        return len(saved_paths)
 
     def _update_return_to_go(self, rtg, reward):
         rtg = rtg * self.Config.returns_scale
@@ -223,7 +312,7 @@ class MADEvaluatorWorker(Process):
         rtg = rtg / self.Config.returns_scale
         return rtg
 
-    def _episodic_eval(self, num_episodes: int):
+    def _episodic_eval(self, num_episodes: int, capture_plan_rollouts: bool = False):
         """Evaluate for one episode each environment."""
 
         # `num_episodes` can be smaller than total number of environment, and
@@ -235,6 +324,7 @@ class MADEvaluatorWorker(Process):
         Config = self.Config
         device = Config.device
         observation_dim = self.normalizer.observation_dim
+        self.latest_plan_rollouts = None
 
         dones = [0 for _ in range(num_episodes)]
         episode_rewards = [np.zeros(Config.n_agents) for _ in range(num_episodes)]
@@ -255,6 +345,7 @@ class MADEvaluatorWorker(Process):
         obs_list = [env.reset()[None] for env in self.env_list[:num_episodes]]
         obs = np.concatenate(obs_list, axis=0)
         recorded_obs = [deepcopy(obs[:, None])]
+        recorded_plans = []
 
         if Config.history_horizon > 0:
             print(f"\nUsing history length of {Config.history_horizon}\n")
@@ -274,7 +365,23 @@ class MADEvaluatorWorker(Process):
             obs_queue.append(obs)
             obs = np.stack(list(obs_queue), axis=1)
 
-            samples = self._generate_samples(obs, returns, env_ts)
+            if capture_plan_rollouts:
+                samples, plan_samples = self._generate_samples(
+                    obs,
+                    returns,
+                    env_ts,
+                    return_plan_samples=True,
+                )
+            else:
+                samples = self._generate_samples(obs, returns, env_ts)
+                plan_samples = samples
+            if capture_plan_rollouts:
+                normed_plan_observations = to_np(plan_samples)
+                plan_observations = self.normalizer.unnormalize(
+                    normed_plan_observations,
+                    "observations",
+                )
+                recorded_plans.append(deepcopy(plan_observations[:, None]))
 
             obs_comb = torch.cat([samples[:, 0, :, :], samples[:, 1, :, :]], dim=-1)
             obs_comb = obs_comb.reshape(-1, Config.n_agents, 2 * observation_dim)
@@ -352,6 +459,12 @@ class MADEvaluatorWorker(Process):
 
         recorded_obs = np.concatenate(recorded_obs, axis=1)
         episode_rewards = np.array(episode_rewards)
+        if capture_plan_rollouts:
+            self.latest_plan_rollouts = {
+                "actual_observations": recorded_obs,
+                "planned_observations": np.concatenate(recorded_plans, axis=1),
+                "episode_rewards": episode_rewards,
+            }
 
         if Config.env_type == "smac" or Config.env_type == "smacv2":
             return recorded_obs, episode_rewards, episode_wins
@@ -410,6 +523,16 @@ class MADEvaluatorWorker(Process):
         model = model_config()
         diffusion = diffusion_config(model)
         self.trainer = trainer_config(diffusion, None, renderer)
+        self.eval_tb_writer = None
+        if getattr(Config, "use_tensorboard", True):
+            from torch.utils.tensorboard import SummaryWriter
+
+            eval_tb_log_dir = os.path.join(log_dir, "tensorboard", "evaluate")
+            os.makedirs(eval_tb_log_dir, exist_ok=True)
+            self.eval_tb_writer = SummaryWriter(log_dir=eval_tb_log_dir)
+            logger.print(
+                f"[ utils/evaluator ] Evaluation TensorBoard logs at: {eval_tb_log_dir}"
+            )
 
         if Config.use_ddim_sample:
             print(f"\n Use DDIM Sampler of {Config.n_ddim_steps} Step(s) \n")
@@ -454,6 +577,8 @@ class MADEvaluatorWorker(Process):
                 elif cmd == "evaluate":
                     self._evaluate(**data)
                 elif cmd == "close":
+                    if getattr(self, "eval_tb_writer", None) is not None:
+                        self.eval_tb_writer.close()
                     self.p.send("closed")
                     self.p.close()
                     # self.queue.shutdown()

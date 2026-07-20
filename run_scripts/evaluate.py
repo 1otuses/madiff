@@ -1,9 +1,37 @@
 import argparse
 import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import diffuser.utils as utils
 import yaml
-from diffuser.utils.launcher_util import build_config_from_dict
+from diffuser.utils.launcher_util import (
+    build_config_from_dict,
+    build_nested_variant_generator,
+)
+
+
+def build_eval_configs(exp_specs):
+    """兼容直接参数 yaml 和 launcher 风格 exp spec。"""
+    if {"meta_data", "variables", "constants"}.issubset(exp_specs.keys()):
+        variant_generator = build_nested_variant_generator(exp_specs)
+        return [
+            build_config_from_dict(variant)
+            for variant in variant_generator()
+        ]
+    return [build_config_from_dict(exp_specs)]
+
+
+def should_save_eval_plan_images_for_step(Config, load_step):
+    """只在配置中最后一个 load_step 保存评估轨迹图。"""
+    return (
+        getattr(Config, "save_eval_plan_images", False)
+        and len(getattr(Config, "load_steps", [])) > 0
+        and load_step == Config.load_steps[-1]
+    )
 
 
 def evaluate(Config):
@@ -37,7 +65,7 @@ def evaluate(Config):
         if evaluator is None:
             evaluator_config = utils.Config(Config.evaluator, verbose=True)
             evaluator = evaluator_config()
-            evaluator.init(
+            evaluator_kwargs = dict(
                 log_dir=Config.log_dir,
                 num_eval=Config.num_eval,
                 num_envs=getattr(Config, "num_envs", Config.num_eval),
@@ -45,8 +73,27 @@ def evaluate(Config):
                 use_ddim_sample=Config.use_ddim_sample,
                 n_ddim_steps=Config.n_ddim_steps,
             )
+            for key in [
+                "save_eval_plan_images",
+                "eval_plan_num_episodes",
+                "eval_plan_plot_steps",
+                "eval_plan_rollout_horizon",
+                "eval_plan_anchor_start",
+                "eval_plan_grid_cols",
+                "save_eval_plan_npz",
+                "use_tensorboard",
+            ]:
+                if hasattr(Config, key):
+                    evaluator_kwargs[key] = getattr(Config, key)
+            evaluator.init(**evaluator_kwargs)
 
-        evaluator.evaluate(load_step=load_step)
+        evaluator.evaluate(
+            load_step=load_step,
+            save_eval_plan_images=should_save_eval_plan_images_for_step(
+                Config,
+                load_step,
+            ),
+        )
 
 
 if __name__ == "__main__":
@@ -59,6 +106,5 @@ if __name__ == "__main__":
     with open(args.experiment, "r") as spec_file:
         spec_string = spec_file.read()
         exp_specs = yaml.load(spec_string, Loader=yaml.SafeLoader)
-    Config = build_config_from_dict(exp_specs)
-
-    evaluate(Config)
+    for Config in build_eval_configs(exp_specs):
+        evaluate(Config)

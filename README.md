@@ -137,7 +137,26 @@ pip install -e third_party/ddpg-agent
     python scripts/transform_og_marl_dataset.py --env_name smac --map_name <map> --quality <dataset>
     ```
 
+### Current OG-MARL Vault datasets
+
+Current OG-MARL datasets use the Flashbax Vault format and require Python 3.10.
+Do not replace `third_party/og-marl` or install Flashbax into the Python 3.8
+MADiff environment. Use the separate `environment-vault.yml` environment and
+the Vault converter described in
+[`docs/vault_dataset_conversion.md`](docs/vault_dataset_conversion.md).
+
 ## Training and Evaluation
+
+This checkout reads datasets from
+`/home/lotus/lotus/lhh/My_DoF/DoF_Trajectory/diffuser/datasets/data` by
+default. Set `MADIFF_DATA_ROOT` to override that root on another machine.
+Training artifacts, checkpoints, TensorBoard events, and evaluation results
+are written below this project's `logs/` directory.
+
+Training progress bars are enabled by default and show the dataset, seed,
+epoch, global step, and latest logged loss. Add `show_progress: false` under
+an experiment's `constants` section to disable them.
+
 To start training, run the following commands
 
 ```bash

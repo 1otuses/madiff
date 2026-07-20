@@ -22,10 +22,10 @@ class ConcatenatedTemporalUnet(nn.Module):
         env_ts_condition: bool = False,
         condition_dropout: float = 0.1,
         kernel_size: int = 5,
-        residual_attn: bool = False,  # not used here
+        residual_attn: bool = False,  # 这里未使用
         use_layer_norm: bool = False,
         max_path_length: int = 100,
-        use_temporal_attention: bool = False,  # not used here
+        use_temporal_attention: bool = False,  # 这里未使用
     ):
         super().__init__()
 
@@ -95,7 +95,7 @@ class IndependentTemporalUnet(nn.Module):
         env_ts_condition: bool = False,
         condition_dropout: float = 0.1,
         kernel_size: int = 5,
-        residual_attn: bool = False,  # not used here
+        residual_attn: bool = False,  # 这里未使用
         max_path_length: int = 100,
         use_temporal_attention: bool = False,
     ):
@@ -167,7 +167,7 @@ class SharedIndependentTemporalUnet(nn.Module):
         self,
         n_agents: int,
         horizon: int,
-        history_horizon: int,  # not used
+        history_horizon: int,  # 未使用
         transition_dim: int,
         dim: int = 128,
         dim_mults: Tuple[int] = (1, 2, 4, 8),
@@ -175,7 +175,7 @@ class SharedIndependentTemporalUnet(nn.Module):
         env_ts_condition: bool = False,
         condition_dropout: float = 0.1,
         kernel_size: int = 5,
-        residual_attn: bool = False,  # not used here
+        residual_attn: bool = False,  # 这里未使用
         max_path_length: int = 100,
     ):
         super().__init__()

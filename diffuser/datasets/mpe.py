@@ -6,6 +6,8 @@ import numpy as np
 import torch
 from ddpg_agent import DDPGAgent
 
+from diffuser.datasets.paths import get_dataset_path
+
 
 class StackWrapper(gym.Wrapper):
     def step(self, action):
@@ -23,29 +25,14 @@ class StackWrapper(gym.Wrapper):
 
 class PretrainedPreyWrapper(gym.Wrapper):
     def __init__(self, env: gym.Env, scenario_name: str):
+        # 对于simple_tag/simple_world场景，需要加载预训练的 prey 模型
         assert scenario_name in ["simple_tag", "simple_world"], scenario_name
-        # XXX: Pass in `device` as an argument?
+        self.scenario_name = scenario_name
+        self.prey_load_path = get_dataset_path(
+            "mpe", scenario_name, "pretrained_adv_model.pt"
+        )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.prey = DDPGAgent(
-            num_in_pol=env.observation_space[-1].shape[0],
-            num_out_pol=env.action_space[-1].shape[0],
-            num_in_critic=env.observation_space[-1].shape[0]
-            + env.action_space[-1].shape[0],
-        )
-        self.prey.to(self.device)
-
-        load_path = os.path.join(
-            os.path.dirname(__file__),
-            "data/mpe",
-            scenario_name,
-            "pretrained_adv_model.pt",
-        )
-        prey_params = torch.load(load_path, map_location=self.device)["agent_params"][
-            -1
-        ]
-        self.prey.load_params_without_optims(prey_params)
-        self.prey.policy.eval()
-        self.prey.target_policy.eval()
+        self.prey = None
 
         super().__init__(env)
 
@@ -55,7 +42,37 @@ class PretrainedPreyWrapper(gym.Wrapper):
         self.action_space = env.action_space[:-1]
         self.observation_space = env.observation_space[:-1]
 
+    def _load_prey(self):
+        if self.prey is not None:
+            return
+        if not os.path.exists(self.prey_load_path):
+            raise FileNotFoundError(
+                "Missing pretrained prey policy for MPE "
+                f"{self.scenario_name}: {self.prey_load_path}. "
+                "Offline dataset construction does not need this file, but online "
+                "rollout/evaluation for simple_tag/simple_world does. Copy "
+                "pretrained_adv_model.pt into this directory or set "
+                "MADIFF_OFFLINE_DATA_ROOT to the offline dataset root that contains it."
+            )
+
+        self.prey = DDPGAgent(
+            num_in_pol=self.env.observation_space[-1].shape[0],
+            num_out_pol=self.env.action_space[-1].shape[0],
+            num_in_critic=self.env.observation_space[-1].shape[0]
+            + self.env.action_space[-1].shape[0],
+        )
+        self.prey.to(self.device)
+
+        prey_params = torch.load(
+            self.prey_load_path,
+            map_location=self.device,
+        )["agent_params"][-1]
+        self.prey.load_params_without_optims(prey_params)
+        self.prey.policy.eval()
+        self.prey.target_policy.eval()
+
     def step(self, action):
+        self._load_prey()
         prey_obs = torch.tensor(
             self.prey_obs, device=self.device, dtype=torch.float32
         ).unsqueeze(0)
@@ -149,9 +166,8 @@ def sequence_dataset(env, preprocess_fn, seed: int = None):
             terminals
     """
 
-    dataset_path = os.path.join(
-        os.path.dirname(__file__),
-        "data/mpe",
+    dataset_path = get_dataset_path(
+        "mpe",
         env.metadata["name"],
         env.metadata["data_split"],
     )
@@ -165,11 +181,31 @@ def sequence_dataset(env, preprocess_fn, seed: int = None):
         print(f"\n USE SEED {seed} DATASET \n")
         seed_dirs = [f"seed_{seed}_data"]
 
-    n_agents = env.unwrapped.n
+    n_agents = len(env.action_space)
     for idx, seed_dir in enumerate(seed_dirs):
         seed_path = os.path.join(dataset_path, seed_dir)
         if not os.path.isdir(seed_path):
             continue
+
+        missing_files = [
+            f"obs_{agent_idx}.npy"
+            for agent_idx in range(n_agents)
+            if not os.path.exists(os.path.join(seed_path, f"obs_{agent_idx}.npy"))
+        ]
+        if missing_files:
+            has_tfrecord = any(
+                filename.endswith(".tfrecord") for filename in os.listdir(seed_path)
+            )
+            hint = (
+                " 当前目录包含 .tfrecord 文件，请先转换为 MADiff 需要的 "
+                "obs_*.npy/actions_*.npy/rewards_*.npy 格式。"
+                if has_tfrecord
+                else ""
+            )
+            raise FileNotFoundError(
+                f"MPE dataset seed directory is missing {missing_files[0]}: "
+                f"{seed_path}.{hint}"
+            )
 
         observations = np.stack(
             [

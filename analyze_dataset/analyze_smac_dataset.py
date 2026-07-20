@@ -125,7 +125,7 @@ def analyze_map(data_root: Path, map_name: str, qualities, out_dir: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze SMAC dataset folders")
-    parser.add_argument("--data_root", type=str, default="diffuser/datasets/data/smac",
+    parser.add_argument("--data_root", type=str, default="/home/lotus/lotus/lhh/offline_datasets/OG-MARL/smac",
                         help="path to smac data root")
     parser.add_argument("--maps", type=str, default="3m,8m,2s3z,5m_vs_6m",
                         help="comma separated map names")

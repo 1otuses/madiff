@@ -162,7 +162,7 @@ class ConvAttentionDeconv(nn.Module):
                 self.nets[i].returns_mlp(returns[:, :, i]) for i in range(self.n_agents)
             ]
             if use_dropout:
-                # here use the same mask for all agents
+                # 这里所有智能体使用相同的 mask。
                 mask = (
                     self.nets[0]
                     .mask_dist.sample(sample_shape=(returns_embed[0].size(0), 1))
@@ -345,13 +345,13 @@ class SharedConvAttentionDeconv(nn.Module):
             assert returns is not None
             returns = einops.rearrange(returns, "b t a -> b a t")
             returns_embed = self.net.returns_mlp(returns)
-            if use_dropout:
-                # here use the same mask for all agents
+            if use_dropout: # 以一定概率保留returns_embed信息
+                # 这里所有智能体使用相同的 mask
                 mask = self.net.mask_dist.sample(
                     sample_shape=(returns_embed.size(0), returns_embed.size(1), 1)
                 ).to(returns_embed.device)
                 returns_embed = mask * returns_embed
-            if force_dropout:
+            if force_dropout: # 强制不保留returns_embed信息
                 returns_embed = 0 * returns_embed
             t = torch.cat([t, returns_embed], dim=-1)
 
@@ -533,7 +533,7 @@ class SharedAttentionAutoEncoder(nn.Module):
             returns = einops.rearrange(returns, "b t a -> b a t")
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
-                # here use the same mask for all agents
+                # 这里所有智能体使用相同的 mask。
                 mask = self.mask_dist.sample(
                     sample_shape=(returns_embed.size(0), returns_embed.size(1), 1)
                 ).to(returns_embed.device)
@@ -685,8 +685,8 @@ class ConvAttentionTemporalValue(nn.Module):
         ), f"Expected {self.n_agents} agents, but got samples with shape {x.shape}"
 
         x = einops.rearrange(x, "b t a f -> b a f t")
-        # the tensor shape of x for each agent may change after each block, so
-        # can not stack x as a tensor (the assignment will cause error).
+        # 每个智能体的 x 在经过各层后形状可能变化，
+        # 因此不能始终把 x 堆叠成一个张量，否则赋值会出错。
         x = [x[:, a_idx] for a_idx in range(x.shape[1])]  # a, b f t
 
         t = [self.time_mlp[i](time) for i in range(self.n_agents)]
@@ -707,7 +707,7 @@ class ConvAttentionTemporalValue(nn.Module):
             x[i] = self.final_block[i](torch.cat([x[i], t[i]], dim=-1))
         x = torch.stack(x, dim=1).squeeze(-1)
 
-        # take mean over agents
+        # 对智能体维度取均值。
         out = x.mean(axis=1, keepdim=True)  # x.shape[0], 1
 
         return out
@@ -822,7 +822,7 @@ class SharedConvAttentionTemporalValue(nn.Module):
         x = self.final_block(torch.cat([x, t], dim=-1))  # x.shape[0] * x.shape[1], 1
 
         x = x.reshape(bs, -1)  # x.shape[0], x.shape[1], 1
-        # take mean over agents
+        # 对智能体维度取均值。
         out = x.mean(axis=1, keepdim=True)  # x.shape[0], 1
 
         return out

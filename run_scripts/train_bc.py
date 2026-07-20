@@ -1,5 +1,10 @@
 import argparse
 import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import diffuser.utils as utils
 import torch
@@ -70,6 +75,9 @@ def main(Config, RUN):
         train_device=Config.device,
         save_checkpoints=getattr(Config, "save_checkpoints", False),
         use_tensorboard=getattr(Config, "use_tensorboard", True),
+        show_progress=getattr(Config, "show_progress", True),
+        progress_position=getattr(Config, "exp_id", 0),
+        progress_desc=f"{Config.dataset} | seed={Config.seed} | BC",
     )
 
     evaluator_config = utils.Config(

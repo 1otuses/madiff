@@ -5,6 +5,8 @@ import gym
 import numpy as np
 from multiagent_mujoco.mujoco_multi import MujocoMulti
 
+from diffuser.datasets.paths import get_dataset_path
+
 ADD_AGENT_ID = False
 
 
@@ -87,9 +89,8 @@ def sequence_dataset(env, preprocess_fn):
             terminals
     """
 
-    dataset_path = os.path.join(
-        os.path.dirname(__file__),
-        "data/mahalfcheetah",
+    dataset_path = get_dataset_path(
+        "mahalfcheetah",
         env.scenario,
         env.metadata["data_split"],
     )

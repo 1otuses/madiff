@@ -5,6 +5,8 @@ import gym
 import numpy as np
 from smac.env import StarCraft2Env
 
+from diffuser.datasets.paths import get_dataset_path
+
 
 class SMAC(gym.Env):
     """Environment wrapper SMAC."""
@@ -131,9 +133,8 @@ def load_environment(name, **kwargs):
 
 
 def sequence_dataset(env, preprocess_fn):
-    dataset_path = os.path.join(
-        os.path.dirname(__file__),
-        "data/smac",
+    dataset_path = get_dataset_path(
+        "smac",
         env.metadata["name"],
         env.metadata["data_split"],
     )

@@ -4,7 +4,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
-from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+from diffusers.schedulers.scheduling_ddim import DDIMScheduler # DDIM采样调度器(加速采样，通常15~50步)
+from diffusers.schedulers.scheduling_consistency_models import CMStochasticIterativeScheduler  # 一致性模型调度器(单步/少步采样)
+
 
 import diffuser.utils as utils
 from diffuser.models.helpers import Losses, apply_conditioning
@@ -22,7 +24,7 @@ class GaussianDiffusion(nn.Module):
         action_dim: int,
         use_inv_dyn: bool = True,  # 是否采用逆动力学模型，默认True
         discrete_action: bool = False,
-        num_actions: int = 0,  # for discrete action space
+        num_actions: int = 0,  # 离散动作空间的动作数量
         n_timesteps: int = 1000,  # 扩散步长默认1000步
         clip_denoised: bool = False,
         predict_epsilon: bool = True,
@@ -49,21 +51,23 @@ class GaussianDiffusion(nn.Module):
         ), "Can't do both returns conditioning and returns loss guidence"
 
         super().__init__()
-        self.n_agents = n_agents
-        self.horizon = horizon
-        self.history_horizon = history_horizon
-        self.observation_dim = observation_dim
-        self.action_dim = action_dim
+        # ========== 基础信息 ==========
+        self.n_agents = n_agents  # N
+        self.horizon = horizon  # T
+        self.history_horizon = history_horizon  # H
+        self.observation_dim = observation_dim  # O
+        self.action_dim = action_dim  # A
         self.state_loss_weight = state_loss_weight
         self.opponent_loss_weight = opponent_loss_weight
         self.discrete_action = discrete_action
-        self.num_actions = num_actions
-        self.transition_dim = observation_dim + action_dim
+        self.num_actions = num_actions  # 离散动作空间的动作数量
+        self.transition_dim = observation_dim + action_dim  # O + A
+        # ========== 模型参数 ==========
         self.model = model
         self.use_inv_dyn = use_inv_dyn
         self.train_only_inv = train_only_inv
-        self.share_inv = share_inv
-        self.joint_inv = joint_inv
+        self.share_inv = share_inv  # 是否共享逆动力学模型,默认True
+        self.joint_inv = joint_inv  # 是否采用联合逆动力学模型,默认False
         self.data_encoder = data_encoder
 
         if self.use_inv_dyn:
@@ -71,16 +75,16 @@ class GaussianDiffusion(nn.Module):
                 hidden_dim,
                 output_dim=action_dim if not discrete_action else num_actions,
             )
-
+        # ========== 条件生成设置 ==========
         self.returns_condition = returns_condition
         self.condition_guidance_w = condition_guidance_w
-
-        self.returns_loss_guided = returns_loss_guided
+        # returns_condition 与 returns_loss_guided 不能同时为 True
+        self.returns_loss_guided = returns_loss_guided 
         self.loss_guidence_w = loss_guidence_w
         self.value_diffusion_model = value_diffusion_model
         if self.value_diffusion_model is not None:
             self.value_diffusion_model.requires_grad_(False)
-
+        # ========== 扩散过程参数 ==========
         self.n_timesteps = int(n_timesteps)
         self.clip_denoised = clip_denoised
         self.predict_epsilon = predict_epsilon
@@ -91,17 +95,26 @@ class GaussianDiffusion(nn.Module):
             prediction_type="epsilon",
             beta_schedule="squaredcos_cap_v2",
         )
-        self.use_ddim_sample = False
+        self.use_ddim_sample = False  # 是否使用DDIM采样
+        self.use_consistency_models_sample = False  # 是否使用一致性模型采样
 
-        # get loss coefficients and initialize objective
+        # ========== 损失函数设置 ==========
+        # 获取损失权重并初始化优化目标
         loss_weights = self.get_loss_weights(loss_discount, action_weight)
         loss_type = "state_l2" if self.use_inv_dyn else "l2"
         self.loss_fn = Losses[loss_type](loss_weights)
 
     def _build_inv_model(self, hidden_dim: int, output_dim: int):
         # 构建逆动力学模型
+        '''
+        \hat a_t ≈ inv_model( [o_t, o_{t+1}] )
+        joint_inv: 联合动力学模型,将agents的观测o_i拼接,同时输出[a_1, ..., a_N].
+        share_inv: 共享逆动力学模型,agents共享模型参数,agent独立输入o_i,输出动作a_i.
+        independent_inv: 独立逆动力学模型,agent独立分配网络参数,独立输入o_i,输出动作a_i.
+        '''
         if self.joint_inv:
             print("\n USE JOINT INV \n")
+            # [B*T, N*2*O]--->[B*T, N*A]
             inv_model = nn.Sequential(
                 nn.Linear(self.n_agents * (2 * self.observation_dim), hidden_dim),
                 nn.ReLU(),
@@ -112,6 +125,7 @@ class GaussianDiffusion(nn.Module):
 
         elif self.share_inv:
             print("\n USE SHARED INV \n")
+            # [B*T*N, 2*O]--->[B*T*N, A]
             inv_model = nn.Sequential(
                 nn.Linear(2 * self.observation_dim, hidden_dim),
                 nn.ReLU(),
@@ -151,13 +165,27 @@ class GaussianDiffusion(nn.Module):
         )
         self.ddim_noise_scheduler.set_timesteps(n_ddim_steps)
         self.use_ddim_sample = True
+    
+    def set_consistency_models_scheduler(self, n_consistency_model_steps: int = 5):
+        # 设置一致性模型调度器
+        # 一致性模型调度器用于在采样过程中生成高斯噪声，以模拟数据的生成过程
+        # 该调度器通过调整噪声的方差，使模型在不同时间步长上生成的样本更符合真实数据的分布
+        # 这允许模型在生成样本时，根据噪声的方差来控制样本的随机性，从而实现更真实的样本生成
+        self.consistency_models_scheduler = CMStochasticIterativeScheduler(
+            num_train_timesteps = self.n_timesteps,
+            sigma_min = 0.002,   # 最小噪声水平
+            sigma_max = 80,      # 最大噪声水平
+            rho = 7.0            # 调度曲线形状参数
+        )
+        self.consistency_models_scheduler.set_timesteps(n_consistency_model_steps)
+        self.use_consistency_models_sample = True
 
     def get_loss_weights(self, discount: float, action_weight: Optional[float] = None):
         """
-        sets loss coefficients for trajectory
+        设置轨迹各时间步和维度的损失权重。
 
-        discount   : float
-            multiplies t^th timestep of trajectory loss by discount**t
+        discount : float
+            第 t 个轨迹时间步的损失乘以 discount**t。
         """
 
         if self.use_inv_dyn:
@@ -165,55 +193,53 @@ class GaussianDiffusion(nn.Module):
         else:
             dim_weights = torch.ones(self.transition_dim, dtype=torch.float32)
 
-        # decay loss with trajectory timestep: discount**t
+        # 按轨迹时间步衰减损失：discount**t。
         discounts = discount ** torch.arange(self.horizon, dtype=torch.float)
         discounts = discounts / discounts.mean()
         discounts = torch.cat([torch.zeros(self.history_horizon), discounts])
         loss_weights = torch.einsum("h,t->ht", discounts, dim_weights)
         loss_weights = loss_weights.unsqueeze(1).expand(-1, self.n_agents, -1).clone()
 
-        # manually set a0 weight
+        # 手动设置第一个动作位置的权重。
         if not self.use_inv_dyn:
             loss_weights[self.history_horizon, :, : self.action_dim] = action_weight
         return loss_weights
 
-    # ------------------------------------------ sampling ------------------------------------------#
+    # ------------------------------------------ 采样 ------------------------------------------#
 
     def get_model_output(
         self,
-        x: torch.Tensor,
-        t: torch.Tensor,
-        returns: Optional[torch.Tensor] = None,
-        env_ts: Optional[torch.Tensor] = None,
+        x: torch.Tensor, # [B, T+H, N, O]带噪输入x_t
+        t: torch.Tensor, # [B] 当前扩散时间步长t
+        returns: Optional[torch.Tensor] = None, # [B, 1, N]条件return-to-go编码
+        env_ts: Optional[torch.Tensor] = None,  # [B, T+H]真实环境时间步编码
         attention_masks: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
     ):
-        if self.returns_condition:
-            # epsilon could be epsilon or x0 itself
+        if self.returns_condition: # CFG
+            # 根据预测目标不同,epsilon 也可能表示 数据x0 本身
             epsilon_cond = self.model(
-                x,
-                t,
+                x, t,
                 returns=returns,
                 env_timestep=env_ts,
                 attention_masks=attention_masks,
                 use_dropout=False,
-            )
+            )  # 不通过use和force,表示不使用dropout概率机制,而是强制使用条件编码信息
             epsilon_uncond = self.model(
-                x,
-                t,
+                x, t,
                 returns=returns,
                 env_timestep=env_ts,
                 attention_masks=attention_masks,
                 force_dropout=True,
-            )
+            )  # 通过use和force,表示强制不使用条件编码信息(force=True会覆盖use)
             epsilon = epsilon_uncond + self.condition_guidance_w * (
                 epsilon_cond - epsilon_uncond
             )
 
-        else:
+        else:  # 采用DM去噪学习数据分布~BC思想
             epsilon = self.model(
                 x, t, env_timestep=env_ts, attention_masks=attention_masks
-            )
+            )  # 这里没有条件returns
 
         return epsilon
 
@@ -239,38 +265,40 @@ class GaussianDiffusion(nn.Module):
         device = list(cond.values())[0].device
         if self.use_ddim_sample:
             scheduler = self.ddim_noise_scheduler
+        elif self.use_consistency_models_sample:
+            scheduler = self.consistency_models_scheduler
         else:
             scheduler = self.noise_scheduler
 
-        x = 0.5 * torch.randn(shape, device=device)  # 0.5 for low tempurature sampling
+        x = 0.5 * torch.randn(shape, device=device)  # 0.5 用于低温采样
 
         if return_diffusion:
             diffusion = [x]
 
-        # set step values
+        # 设置采样步
         # scheduler.set_timesteps(self.num_inference_steps)
         timesteps = scheduler.timesteps
 
         progress = utils.Progress(len(timesteps)) if verbose else utils.Silent()
         for t in timesteps:
-            # 1. apply conditioning
+            # 1. 应用条件约束
             x = apply_conditioning(x, cond)
             x = self.data_encoder(x)
 
-            # 2. predict model output
+            # 2. 预测模型输出
             ts = torch.full((batch_size,), t, device=device, dtype=torch.long)
             model_output = self.get_model_output(
                 x, ts, returns, env_ts, attention_masks
             )
 
-            # 3. compute previous image: x_t -> x_t-1
+            # 3. 计算上一扩散状态：x_t -> x_t-1
             x = scheduler.step(model_output, t, x).prev_sample
 
             progress.update({"t": t})
             if return_diffusion:
                 diffusion.append(x)
 
-        # finally make sure conditioning is enforced
+        # 最后再次确保条件约束被强制满足
         x = apply_conditioning(x, cond)
         x = self.data_encoder(x)
 
@@ -280,7 +308,7 @@ class GaussianDiffusion(nn.Module):
         else:
             return x
 
-    # ------------------------------------------ training ------------------------------------------#
+    # ------------------------------------------ 训练 ------------------------------------------#
 
     def p_losses(
         self,
@@ -300,8 +328,7 @@ class GaussianDiffusion(nn.Module):
         x_noisy = self.data_encoder(x_noisy)
 
         epsilon = self.model(
-            x_noisy,
-            t,
+            x_noisy, t,
             returns=returns,
             env_timestep=env_ts,
             attention_masks=attention_masks,
@@ -330,7 +357,7 @@ class GaussianDiffusion(nn.Module):
             opponent_loss_weight.scatter_(dim=2, index=indices, value=1)
             loss = loss * opponent_loss_weight
 
-        # TODO(zbzhu): Check these two '.mean()'
+        # TODO(zbzhu): 检查这里两个 `.mean()` 是否合理
         loss = (
             (loss * loss_masks).mean(dim=[1, 2]) / loss_masks.mean(dim=[1, 2])
         ).mean()
@@ -357,7 +384,7 @@ class GaussianDiffusion(nn.Module):
         )
 
         noise = 0.5 * torch.randn_like(x_t)
-        # no noise when t == 0
+        # t == 0 时不添加噪声。
         nonzero_mask = (1 - (t == 0).float()).reshape(b, *((1,) * (len(x_t.shape) - 1)))
 
         x_t_minus_1 = (
@@ -366,11 +393,11 @@ class GaussianDiffusion(nn.Module):
         x_t_minus_1 = apply_conditioning(x_t_minus_1, cond)
         x_t_minus_1 = self.data_encoder(x_t_minus_1)
 
-        # in value_diffusion_model, t is trained as t - 1
+        # value_diffusion_model 中的 t 按 t - 1 训练。
         value_pred = self.value_diffusion_model(x_t_minus_1, t)
 
         # value_pred = torch.clamp(value_pred, 0.0, 400.0)
-        return -1.0 * value_pred.mean()  # maximize value
+        return -1.0 * value_pred.mean()  # 最大化 value。
 
     def compute_inv_loss(
         self,
@@ -379,7 +406,7 @@ class GaussianDiffusion(nn.Module):
         legal_actions: Optional[torch.Tensor] = None,
     ):
         info = {}
-        # Calculating inv loss
+        # 计算逆动力学损失
         x_t = x[:, :-1, :, self.action_dim :]
         a_t = x[:, :-1, :, : self.action_dim]
         x_t_1 = x[:, 1:, :, self.action_dim :]
@@ -543,8 +570,8 @@ class ValueDiffusion(GaussianDiffusion):
             t = t + 1
             noise = torch.randn_like(x_start)
 
-            # since self.sqrt_alphas_cumprod and xxx is changed in __init__(),
-            # x_noisy here is x_t_minus_1
+            # 因为 self.sqrt_alphas_cumprod 等变量在 __init__() 中被调整，
+            # 这里的 x_noisy 实际对应 x_t_minus_1。
             x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
             x_noisy = apply_conditioning(x_noisy, cond)
             x_noisy = self.data_encoder(x_noisy)

@@ -20,7 +20,7 @@ def analyze_mpe_dataset(env_name):
     每个质量级别包含多个seed目录,每个seed包含3个智能体的数据
     """
     
-    dataset_root = Path(f"/home/lotus/data/vs_code_project/madiff/diffuser/datasets/data/mpe/{env_name}")
+    dataset_root = Path(f"/home/lotus/lotus/lhh/offline_datasets/OMAR/mpe/{env_name}")
     
     print("=" * 80)
     print(f"{env_name.upper()} 离线数据集分析")

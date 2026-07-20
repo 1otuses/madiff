@@ -12,7 +12,6 @@ from multiprocessing.context import Process
 import numpy as np
 import torch
 from ml_logger import logger
-from torch.utils.tensorboard import SummaryWriter
 
 import diffuser.utils as utils
 from diffuser.utils.arrays import to_np, to_torch
@@ -191,6 +190,8 @@ class BCEvaluatorWorker(Process):
         self.env_list = [
             load_environment(Config.dataset) for _ in range(Config.num_eval)
         ]
+        from torch.utils.tensorboard import SummaryWriter
+
         tb_log_dir = os.path.join(self.log_dir, "tensorboard")
         os.makedirs(tb_log_dir, exist_ok=True)
         self.tb_writer = SummaryWriter(log_dir=tb_log_dir)

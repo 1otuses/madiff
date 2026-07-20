@@ -3,6 +3,8 @@ import os
 import numpy as np
 from multiagent_mujoco.mujoco_multi import MujocoMulti
 
+from diffuser.datasets.paths import get_dataset_path
+
 
 def load_environment(name):
     if type(name) is not str:
@@ -43,9 +45,8 @@ def load_environment(name):
 
 
 def sequence_dataset(env, preprocess_fn):
-    dataset_path = os.path.join(
-        os.path.dirname(__file__),
-        "data/mamujoco",
+    dataset_path = get_dataset_path(
+        "mamujoco",
         env.metadata["name"],
         env.metadata["data_split"],
     )

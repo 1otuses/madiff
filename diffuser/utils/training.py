@@ -4,7 +4,7 @@ import os
 import einops
 import torch
 from ml_logger import logger
-from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 import diffuser
 
@@ -63,6 +63,9 @@ class Trainer(object):
         train_device="cuda",
         save_checkpoints=False,
         use_tensorboard=True,  # <-- 新增参数
+        show_progress=True,
+        progress_position=0,
+        progress_desc="train",
     ):
         super().__init__()
         self.model = diffusion_model
@@ -119,10 +122,15 @@ class Trainer(object):
 
         self.evaluator = None
         self.device = train_device
+        self.show_progress = show_progress
+        self.progress_position = progress_position
+        self.progress_desc = progress_desc
 
         # --- TensorBoard 集成 ---
         self.use_tensorboard = use_tensorboard
         if self.use_tensorboard:
+            from torch.utils.tensorboard import SummaryWriter
+
             tb_log_dir = os.path.join(self.bucket, logger.prefix, "tensorboard")
             os.makedirs(tb_log_dir, exist_ok=True)
             self.tb_writer = SummaryWriter(log_dir=tb_log_dir)
@@ -158,9 +166,25 @@ class Trainer(object):
     # ------------------------------------ api ------------------------------------#
     # -----------------------------------------------------------------------------#
 
-    def train(self, n_train_steps):
+    def train(self, n_train_steps, epoch=None, total_epochs=None):
         timer = Timer()
-        for _ in range(n_train_steps):
+        description = self.progress_desc
+        if epoch is not None and total_epochs is not None:
+            description = f"{description} | epoch {epoch + 1}/{total_epochs}"
+        progress = tqdm(
+            range(n_train_steps),
+            desc=description,
+            disable=not self.show_progress,
+            dynamic_ncols=True,
+            leave=(
+                epoch is None
+                or total_epochs is None
+                or epoch == total_epochs - 1
+            ),
+            position=self.progress_position,
+        )
+
+        for _ in progress:
             for i in range(self.gradient_accumulate_every):
                 batch = next(self.dataloader)
                 batch = batch_to_device(batch, device=self.device)
@@ -188,6 +212,11 @@ class Trainer(object):
                     f"{self.step}: {loss:8.4f} | {infos_str} | t: {timer():8.4f}"
                 )
                 metrics = {k: v.detach().item() for k, v in infos.items()}
+                progress.set_postfix(
+                    step=self.step,
+                    loss=f"{loss.detach().item():.4f}",
+                    refresh=False,
+                )
                 logger.log(
                     step=self.step, loss=loss.detach().item(), **metrics, flush=True
                 )

@@ -149,7 +149,7 @@ class TemporalMlpBlock(nn.Module):
         """
         x : [ batch_size x inp_channels x horizon ]
         t : [ batch_size x embed_dim ]
-        returns:
+        返回:
         out : [ batch_size x out_channels x horizon ]
         """
 
@@ -190,7 +190,7 @@ class ResidualTemporalBlock(nn.Module):
         """
         x : [ batch_size x inp_channels x horizon ]
         t : [ batch_size x embed_dim ]
-        returns:
+        返回:
         out : [ batch_size x out_channels x horizon ]
         """
 
@@ -485,7 +485,7 @@ class TemporalValue(nn.Module):
 
         x = einops.rearrange(x, "b h t -> b t h")
 
-        # mask out first conditioning timestep, since this is not sampled by the model
+        # 屏蔽第一个条件时间步，因为该时间步不是由模型采样得到的。
         # x[:, :, 0] = 0
 
         t = self.time_mlp(time)

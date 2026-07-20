@@ -1,11 +1,11 @@
 meta_data:
   exp_name: "mad_mpe"
   script_path: "run_scripts/train.py"
-  num_workers: 2
+  num_workers: 1
   job_name: "{dataset}/h_{horizon}-{model}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
 
 variables:
-  seed: [100, 200, 300, 400, 500]
+  seed: [100]
 
   horizon: [24]
   returns_scale: [700]
@@ -22,7 +22,7 @@ constants:
   decentralized_execution: True
   use_zero_padding: False
   pred_future_padding: True
-  use_ddim_sample: False
+  use_ddim_sample: True
   n_ddim_steps: 15
 
   # model
@@ -71,6 +71,7 @@ constants:
   save_parallel: False
   n_reference: 3
   save_checkpoints: True
+  use_tensorboard: True
 
   # eval
   evaluator: "utils.MADEvaluator"

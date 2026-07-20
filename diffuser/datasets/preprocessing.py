@@ -5,8 +5,6 @@ import gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from .d4rl import load_environment
-
 # -----------------------------------------------------------------------------#
 # -------------------------------- general api --------------------------------#
 # -----------------------------------------------------------------------------#
@@ -63,6 +61,11 @@ def add_deltas(env):
 
 
 def maze2d_set_terminals(env):
+    # Importing d4rl eagerly also imports legacy pybullet modules which mutate
+    # sys.path. Under multiprocessing "spawn", that can make a backported
+    # site-packages/typing.py shadow Python 3.8's standard-library typing.
+    from .d4rl import load_environment
+
     env = load_environment(env) if type(env) == str else env
     goal = np.array(env._target)
     threshold = 0.5

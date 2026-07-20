@@ -10,7 +10,7 @@ LOG_SIG_MIN = -20
 
 class ReparamMultivariateNormalDiag:
     """
-    My reparameterized normal implementation
+    对角协方差多元正态分布的重参数化实现。
     """
 
     def __init__(self, mean, log_sig_diag):
@@ -28,7 +28,7 @@ class ReparamMultivariateNormalDiag:
         return samples
 
     def sample_n(self, n):
-        # cleanly expand float or Tensor or Variable parameters
+        # 统一扩展 float、Tensor 或 Variable 类型参数。
         def expand(v):
             if isinstance(v, Number):
                 return torch.Tensor([v], requires_grad=False).expand(n, 1)
