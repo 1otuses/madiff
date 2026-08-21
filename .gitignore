@@ -153,3 +153,4 @@ wandb/
 *.json
 __MACOSX/
 diffuser/datasets/data
+/tests

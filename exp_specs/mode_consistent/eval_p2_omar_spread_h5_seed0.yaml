@@ -1,0 +1,20 @@
+meta_data:
+  exp_name: ci_codiff_p2_omar_spread_h5_seed0_eval
+  script_path: run_scripts/evaluate_mode_consistent.py
+  num_workers: 1
+
+variables:
+  protocol: [unlabeled_comparison]
+
+constants:
+  stage: central
+  batch_size: 512
+  overwrite: false
+  output_path: logs/ci_codiff_p2_omar_spread_h5_seed0/central_unlabeled_comparison_seed0.json
+  runs:
+    vq:
+      log_dir: logs/ci_codiff_p2_omar_spread_h5_seed0/central/omar_spread_expert/vq/k_6-h_5-s_1-steps_33000/0
+      load_step: 33000
+    no_code:
+      log_dir: logs/ci_codiff_p2_omar_spread_h5_seed0/central/omar_spread_expert/no_code/k_6-h_5-s_1-steps_33000/0
+      load_step: 33000

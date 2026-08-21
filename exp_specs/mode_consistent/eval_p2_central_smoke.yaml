@@ -1,0 +1,14 @@
+meta_data:
+  exp_name: ci_codiff_p2_smoke_eval
+  script_path: run_scripts/evaluate_mode_consistent.py
+  num_workers: 1
+
+variables:
+  log_dir:
+    - logs/ci_codiff_p2_smoke/central/paired_spread_smoke/k_2-h_2-s_1/0
+
+constants:
+  stage: central
+  load_steps: [2]
+  batch_size: 8
+  overwrite: false

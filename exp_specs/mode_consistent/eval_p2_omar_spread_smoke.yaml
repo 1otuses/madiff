@@ -1,0 +1,20 @@
+meta_data:
+  exp_name: ci_codiff_p2_omar_spread_smoke_eval
+  script_path: run_scripts/evaluate_mode_consistent.py
+  num_workers: 1
+
+variables:
+  protocol: [unlabeled_comparison]
+
+constants:
+  stage: central
+  batch_size: 32
+  overwrite: false
+  output_path: logs/ci_codiff_p2_omar_spread_smoke/central_unlabeled_comparison.json
+  runs:
+    vq:
+      log_dir: logs/ci_codiff_p2_omar_spread_smoke/central/omar_spread_smoke/vq/k_6-h_5-s_1-steps_2/0
+      load_step: 2
+    no_code:
+      log_dir: logs/ci_codiff_p2_omar_spread_smoke/central/omar_spread_smoke/no_code/k_6-h_5-s_1-steps_2/0
+      load_step: 2

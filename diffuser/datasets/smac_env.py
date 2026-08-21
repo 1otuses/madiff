@@ -2,6 +2,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 import gym
+import gym.spaces
 import numpy as np
 from smac.env import StarCraft2Env
 

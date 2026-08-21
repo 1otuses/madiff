@@ -1,0 +1,40 @@
+meta_data:
+  exp_name: ci_codiff_p2_h5_seed0
+  script_path: run_scripts/train_mode_consistent.py
+  num_workers: 1
+  job_name: "{stage}/{dataset_name}/{model_kind}/k_{n_modes}-h_{window_horizon}-s_{window_stride}-steps_{n_train_steps}"
+
+variables:
+  model_kind: [vq, no_code, oracle_code, kmeans]
+
+constants:
+  stage: central
+  dataset_name: paired_spread_balanced
+  dataset_path: /home/lotus/lotus/lhh/offline_datasets/CI-CoDiff/mpe/simple_spread/balanced_6mode_expert_seed0.npz
+  seed: 0
+
+  # 四个分支必须共用同一 scenario split。
+  split_seed: 20260814
+  validation_fraction: 0.15
+  test_fraction: 0.15
+
+  n_modes: 6
+  hidden_dim: 128
+  latent_dim: 32
+  agent_embedding_dim: 8
+  commitment_cost: 0.25
+
+  # 经讨论采用 H=5、stride=1 作为首个正式窗口协议。
+  window_horizon: 5
+  window_stride: 1
+
+  n_train_steps: 2000
+  batch_size: 128
+  eval_batch_size: 256
+  learning_rate: 0.0003
+  log_freq: 50
+  save_freq: 250
+  continue_training: false
+
+  # KMeans 是一次性 CPU 对照，不使用 n_train_steps。
+  kmeans_iterations: 100

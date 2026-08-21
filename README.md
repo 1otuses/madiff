@@ -1,23 +1,36 @@
-# [NeurIPS 2024] MADiff: Offline Multi-agent Learning with Diffusion Models
+# [NeurIPS 2024] MADiff：基于扩散模型的离线多智能体学习
 
 ![Python 3.8](https://img.shields.io/badge/Python-3.8-blue)
 ![Code style](https://img.shields.io/badge/code%20style-black-000000.svg)
 ![MIT](https://img.shields.io/badge/license-MIT-blue)
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2305.17330)
 
-This is the official implementation of "MADiff: Offline Multi-agent Learning with Diffusion Models" published in NeurIPS 2024.
+这是 NeurIPS 2024 论文 “MADiff: Offline Multi-agent Learning with Diffusion Models”
+的官方实现。本工作区在原始 MADiff 基础上开展 CI-CoDiff 阶段性研究。
+
+## 本地研究扩展：CI-CoDiff
+
+`mode_consistent` 以最新《蓝图思路.md》为主线，研究严格 Dec-POMDP 下的相关协调
+模态能否被分散策略实现。当前已经打通中央离散 VQ mode teacher、严格局部 categorical
+aligner、mode-conditioned MADiff、集中式 value head 与 focal-agent 分散采样的工程
+pipeline；这只证明实现路径可运行，尚未证明聚类语义、局部可辨识性或 return 提升。
+不具论文效力的手工特征、终局 probe、容量 pilot 及重复文档已从正式树中删除。
+
+研究问题、相关工作、算法框架、benchmark 和复现命令见
+[`mode_consistent/README.md`](mode_consistent/README.md)；动态阶段状态、实验规划、脚本与证据审计见
+[`mode_consistent/RESEARCH_PROGRESS.md`](mode_consistent/RESEARCH_PROGRESS.md)。
 
 ![MADiff](/assets/images/madiff.png)
 
-## Performances
+## 原始 MADiff 基准结果
 
-We omit the standard deviation of the results for brevity. The full results can be found in our [paper](https://arxiv.org/abs/2305.17330).
+为简洁起见，下表省略标准差；完整结果见[论文](https://arxiv.org/abs/2305.17330)。
 
-### Multi-agent Particle Environment (MPE)
+### 多智能体粒子环境（MPE）
 
-The peformances on MPE datasets released in [OMAR paper](https://arxiv.org/abs/2111.11188). The results are averaged over 5 random seeds.
+以下为 [OMAR](https://arxiv.org/abs/2111.11188) 发布的 MPE 数据集结果，均值来自 5 个随机 seed。
 
-| Dataset | Task | BC | MA-ICQ | MA-TD3+BC | MA-CQL | OMAR | MADiff-D | MADiff-C* |
+| 数据集 | 任务 | BC | MA-ICQ | MA-TD3+BC | MA-CQL | OMAR | MADiff-D | MADiff-C* |
 | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: |
 | Expert | Spread | 35.0 | 104.0 | 108.3 | 98.2 | **114.9** | 95.0 | 116.7 |
 | Md-Replay | Spread | 10.0 | 13.6 | 15.4 | 20.0 | **37.9** | 30.3 | 42.2 |
@@ -32,11 +45,11 @@ The peformances on MPE datasets released in [OMAR paper](https://arxiv.org/abs/2
 | Medium | World | 25.3 | 71.9 | 73.4 | 58.6 | 74.6 | **123.5** | 158.2 |
 | Random | World | -2.4 | 1.0 | 2.8 | 0.6 | **5.9** | 2.0 | 8.1 |
 
-### Multi-agent Mujoco (MA-Mujoco)
+### 多智能体 MuJoCo（MA-MuJoCo）
 
-The peformances on MA-Mujoco datasets released in [off-the-grid MARL benchmark](https://arxiv.org/abs/2302.00521). The results are averaged over 5 random seeds. 
+以下为 [off-the-grid MARL benchmark](https://arxiv.org/abs/2302.00521) 发布的 MA-MuJoCo 数据集结果，均值来自 5 个随机 seed。
 
-| Dataset | Task | BC | MA-TD3+BC | OMAR | MADiff-D | MADiff-C* |
+| 数据集 | 任务 | BC | MA-TD3+BC | OMAR | MADiff-D | MADiff-C* |
 | :----: | :----: | :----: | :----: | :----: | :----: | :----: |
 | Good | 2halfcheetah | 6846 | 7025 | 1434 | **8246** | 8514 |
 | Medium | 2halfcheetah | 1627 | **2561** | 1892 | 2207 | 2203 |
@@ -48,11 +61,11 @@ The peformances on MA-Mujoco datasets released in [off-the-grid MARL benchmark](
 | Medium | 4ant | 1617 | **1843** | 929 | 1649 | 1871 |
 | Poor | 4ant | 1033 | 1075 | 518 | **1295** | 1353 |
 
-### StarCraft Multi-Agent Challenge (SMAC)
+### 星海争霸多智能体挑战（SMAC）
 
-The peformances on SMAC datasets released in [off-the-grid MARL benchmark](https://arxiv.org/abs/2302.00521). The results are averaged over 5 random seeds.
+以下为 [off-the-grid MARL benchmark](https://arxiv.org/abs/2302.00521) 发布的 SMAC 数据集结果，均值来自 5 个随机 seed。
 
-| Dataset | Task | BC | QMIX | MA-ICQ | MA-CQL | MADT | MADiff-D | MADiff-C* |
+| 数据集 | 任务 | BC | QMIX | MA-ICQ | MA-CQL | MADT | MADiff-D | MADiff-C* |
 | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: |
 | Good | 3m | 16.0 | 13.8 | 18.8 | **19.6** | 19.1 | 19.3 | 19.9 |
 | Medium | 3m | 8.2 | 17.3 | 18.1 | **18.9** | 15.8 | 17.3 | 18.1 | 
@@ -67,11 +80,11 @@ The peformances on SMAC datasets released in [off-the-grid MARL benchmark](https
 | Medium | 8m | 10.7 | 13.9 | 18.6 | 16.8 | 18.5 | **18.9** | 19.4 | 
 | Poor | 8m | 5.3 | 6.0 | **10.8** | 4.6 | 4.7 | 5.1 | 5.1 |
 
-*\* MADiff-C is not meant to be a fair comparison with baseline methods but to show if MADiff-D fills the gap for coordination without global information.*
+*\* MADiff-C 不用于和基线方法做公平比较，仅用于检验 MADiff-D 能否在没有全局信息时弥补协调差距。*
 
-## Setup
+## 环境配置
 
-### Installation
+### 安装
 
 ```bash
 sudo apt-get update
@@ -82,32 +95,34 @@ pip install torch==1.12.1+cu113 --extra-index-url https://download.pytorch.org/w
 pip install -r requirements.txt
 ```
 
-### Setup MPE
+### 配置 MPE
 
-We use the MPE dataset from [OMAR](https://github.com/ling-pan/OMAR). The dataset download link and instructions can be found in OMAR's [repo](https://github.com/ling-pan/OMAR). Since their BaiduPan download links might be inconvenient for non-Chinese users, we maintain an anonymous mirror [repo](https://osf.io/jxawh/?view_only=dd3264a695af4c03bffde0350b8e8c4a) in OSF for acquiring the dataset.
+本项目使用 [OMAR](https://github.com/ling-pan/OMAR) 的 MPE 数据。当前本机数据位于：
 
-The downloaded dataset should be placed under `diffuser/datasets/data/mpe`.
+```text
+/home/lotus/lotus/lhh/offline_datasets/OMAR/mpe
+```
 
-Install MPE environment:
+安装 MPE 环境：
 
 ```bash
 pip install -e third_party/multiagent-particle-envs
 pip install -e third_party/ddpg-agent
 ```
 
-### Setup MA-Mujoco
+### 配置 MA-MuJoCo
 
-1. Install MA-Mujoco:
+1. 安装 MA-MuJoCo：
 
     ```bash
     pip install -e third_party/multiagent_mujoco
     ```
 
-2. We use the MA-Mujoco dataset from [off-the-grid MARL](https://sites.google.com/view/og-marl). We preprocess the dataset to concatenate trajectories to full episodes and save them as `.npy` files for easier loading. The original dataset can be downloaded from the Huggingface [repo](https://huggingface.co/datasets/Avada11/MADiff-Datasets).
+2. MA-MuJoCo 使用 [off-the-grid MARL](https://sites.google.com/view/og-marl) 数据，并预处理为保留 episode 边界的 `.npy` 文件。
 
-    The downloaded dataset should be unzipped and placed under `diffuser/datasets/data/mamujoco`.
+    本机数据位于 `/home/lotus/lotus/lhh/offline_datasets/OG-MARL-Vault`。
 
-3. Install off-the-grid MARL and transform the original dataset.
+3. 安装 off-the-grid MARL 并转换原始数据：
 
     ```bash
     pip install -r ./third_party/og-marl/install_environments/requirements/mamujoco.txt
@@ -115,21 +130,21 @@ pip install -e third_party/ddpg-agent
     python scripts/transform_og_marl_dataset.py --env_name mamujoco --map_name <map> --quality <dataset>
     ```
 
-### Setup SMAC
+### 配置 SMAC
 
-1. Run `scripts/smac.sh` to install *StarCraftII*.
+1. 运行 `scripts/smac.sh` 安装 *StarCraftII*。
 
-2. Install SMAC:
+2. 安装 SMAC：
 
     ```bash
     pip install git+https://github.com/oxwhirl/smac.git
     ```
 
-3. We use the SMAC dataset from [off-the-grid MARL](https://sites.google.com/view/og-marl). We preprocess the dataset to concatenate trajectories to full episodes and save them as `.npy` files for easier loading. The original dataset can be downloaded from the Huggingface [repo](https://huggingface.co/datasets/Avada11/MADiff-Datasets).
+3. SMAC 使用 [off-the-grid MARL](https://sites.google.com/view/og-marl) 数据，并预处理为保留 episode 边界的 `.npy` 文件。
 
-    The downloaded dataset should be unzipped and placed under `diffuser/datasets/data/smac`.
+    本机转换后数据位于 `/home/lotus/lotus/lhh/offline_datasets/OG-MARL-Vault/smac` 与 `smacv2`。
 
-4. Install off-the-grid MARL and transform the original dataset.
+4. 安装 off-the-grid MARL 并转换原始数据：
 
     ```bash
     pip install -r ./third_party/og-marl/install_environments/requirements/smacv1.txt
@@ -137,46 +152,42 @@ pip install -e third_party/ddpg-agent
     python scripts/transform_og_marl_dataset.py --env_name smac --map_name <map> --quality <dataset>
     ```
 
-### Current OG-MARL Vault datasets
+### 当前 OG-MARL Vault 数据
 
-Current OG-MARL datasets use the Flashbax Vault format and require Python 3.10.
-Do not replace `third_party/og-marl` or install Flashbax into the Python 3.8
-MADiff environment. Use the separate `environment-vault.yml` environment and
-the Vault converter described in
-[`docs/vault_dataset_conversion.md`](docs/vault_dataset_conversion.md).
+当前 OG-MARL 数据使用 Flashbax Vault 格式并要求 Python 3.10。不要替换
+`third_party/og-marl`，也不要把 Flashbax 安装进 Python 3.8 的 MADiff 环境。
+请使用独立的 `environment-vault.yml` 环境和
+[`docs/vault_dataset_conversion.md`](docs/vault_dataset_conversion.md) 中的转换流程。
 
-## Training and Evaluation
+## 训练与评估
 
-This checkout reads datasets from
-`/home/lotus/lotus/lhh/My_DoF/DoF_Trajectory/diffuser/datasets/data` by
-default. Set `MADIFF_DATA_ROOT` to override that root on another machine.
-Training artifacts, checkpoints, TensorBoard events, and evaluation results
-are written below this project's `logs/` directory.
+本项目默认从 `/home/lotus/lotus/lhh/offline_datasets` 读取数据。可通过
+`MADIFF_OFFLINE_DATA_ROOT` 覆盖根目录，或通过各数据源专用环境变量覆盖。
+训练产物、checkpoint、TensorBoard event 和评估结果写入项目的 `logs/` 目录。
 
-Training progress bars are enabled by default and show the dataset, seed,
-epoch, global step, and latest logged loss. Add `show_progress: false` under
-an experiment's `constants` section to disable them.
+训练进度条默认显示 dataset、seed、epoch、global step 和最新 loss；可在实验
+`constants` 中设置 `show_progress: false` 关闭。
 
-To start training, run the following commands
+原始 MADiff 训练命令：
 
 ```bash
-# multi-agent particle environment
+# 多智能体粒子环境
 python run_experiment.py -e exp_specs/mpe/<task>/mad_mpe_<task>_attn_<dataset>.yaml  # CTCE
 python run_experiment.py -e exp_specs/mpe/<task>/mad_mpe_<task>_ctde_<dataset>.yaml  # CTDE
-# ma-mujoco
+# MA-MuJoCo
 python run_experiment.py -e exp_specs/mamujoco/<task>/mad_mamujoco_<task>_attn_<dataset>_history.yaml  # CTCE
 python run_experiment.py -e exp_specs/mamujoco/<task>/mad_mamujoco_<task>_ctde_<dataset>_history.yaml  # CTDE
-# smac
+# SMAC
 python run_experiment.py -e exp_specs/smac/<map>/mad_smac_<map>_attn_<dataset>_history.yaml  # CTCE
 python run_experiment.py -e exp_specs/smac/<map>/mad_smac_<map>_ctde_<dataset>_history.yaml  # CTDE
 ```
 
-To evaluate the trained model, first replace the `log_dir` with those need to be evaluated in `exp_specs/eval_inv.yaml` and run
+评估前在 `exp_specs/eval_inv.yaml` 中设置待评估的 `log_dir`，然后运行：
 ```bash
 python run_experiment.py -e exp_specs/eval_inv.yaml
 ```
 
-## Citation
+## 引用
 
 ```
 @article{zhu2023madiff,
@@ -187,6 +198,6 @@ python run_experiment.py -e exp_specs/eval_inv.yaml
 }
 ```
 
-## Acknowledgements
+## 致谢
 
-The codebase is built upon [decision-diffuser repo](https://github.com/anuragajay/decision-diffuser) and [ILSwiss](https://github.com/Ericonaldo/ILSwiss).
+本代码库基于 [decision-diffuser](https://github.com/anuragajay/decision-diffuser) 和 [ILSwiss](https://github.com/Ericonaldo/ILSwiss) 构建。

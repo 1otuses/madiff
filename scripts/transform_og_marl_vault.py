@@ -321,7 +321,7 @@ def _madiff_env_name(env_name: str) -> str:
         "smac_v1": "smac",
         "smac_v2": "smacv2",
         "mamujoco": "mamujoco",
-        "gymnasium_mamujoco": "mamujoco",
+        "gymnasium_mamujoco": "gymnasium_mamujoco",
     }
     if env_name not in aliases:
         raise ValueError(

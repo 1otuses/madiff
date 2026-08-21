@@ -68,6 +68,11 @@ Python 解释器，无需重复创建环境。例如当前机器已有：
 | `smac_v1` | `smac` |
 | `smac_v2` | `smacv2` |
 | `mamujoco` | `mamujoco` |
+| `gymnasium_mamujoco` | `gymnasium_mamujoco` |
+
+其中 `mamujoco` 表示基于旧版 Multi-Agent MuJoCo 的历史数据，
+`gymnasium_mamujoco` 表示基于 Gymnasium 的新版数据。两者使用独立输出目录，
+避免同名 scenario 和 UID 相互覆盖。
 
 转换器会：
 

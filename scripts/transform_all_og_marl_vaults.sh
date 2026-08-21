@@ -7,10 +7,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
-# 默认使用当前环境的 Python；可通过 PYTHON_BIN 指定独立解释器。
-PYTHON_BIN="${PYTHON_BIN:-python}"
+# 默认使用安装了 Flashbax 的独立环境；仍可通过 PYTHON_BIN 覆盖。
+DEFAULT_PYTHON_BIN="/home/lotus/miniconda3/envs/og-marl/bin/python"
+PYTHON_BIN="${PYTHON_BIN:-${DEFAULT_PYTHON_BIN}}"
 VAULT_ROOT="/home/lotus/lotus/lhh/offline_datasets/Vaults"
 OUTPUT_ROOT="/home/lotus/lotus/lhh/offline_datasets/OG-MARL-Vault"
+
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "Python 解释器不存在或不可执行：${PYTHON_BIN}" >&2
+  echo "请通过 PYTHON_BIN 指定安装了 NumPy 和 Flashbax 的 Python 3.10 环境。" >&2
+  exit 1
+fi
+
+# 在处理大型 Vault 前检查依赖，避免转换到中途才因环境错误退出。
+if ! "${PYTHON_BIN}" -c \
+  "import numpy; from flashbax.vault import Vault" >/dev/null 2>&1; then
+  echo "Python 环境缺少 NumPy 或 Flashbax：${PYTHON_BIN}" >&2
+  echo "请使用 og-marl 环境，或设置正确的 PYTHON_BIN。" >&2
+  exit 1
+fi
+
+echo "使用 Python：${PYTHON_BIN}"
 
 SMAC_V1_SCENARIOS=(
   "3m"
@@ -42,7 +59,7 @@ madiff_env_name() {
   case "$1" in
     smac_v1) echo "smac" ;;
     smac_v2) echo "smacv2" ;;
-    gymnasium_mamujoco) echo "mamujoco" ;;
+    gymnasium_mamujoco) echo "gymnasium_mamujoco" ;;
     mamujoco) echo "mamujoco" ;;
     *)
       echo "不支持的环境：$1" >&2
@@ -62,7 +79,7 @@ collect_jobs() {
   for scenario in "$@"; do
     vault_dir="${VAULT_ROOT}/og_marl/${env_name}/${scenario}.vlt"
     if [[ ! -d "${vault_dir}" ]]; then
-      echo "找不到 Vault,跳过:${vault_dir}" >&2
+      echo "Vault 尚未下载，跳过：${vault_dir}" >&2
       continue
     fi
 

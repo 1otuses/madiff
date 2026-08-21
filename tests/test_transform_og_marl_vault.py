@@ -5,7 +5,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scripts.transform_og_marl_vault import convert_experience, write_madiff_cache
+from scripts.transform_og_marl_vault import (
+    _madiff_env_name,
+    convert_experience,
+    write_madiff_cache,
+)
 
 
 def make_experience():
@@ -38,6 +42,11 @@ def make_experience():
             ),
         },
     }
+
+
+def test_environment_names_keep_old_and_new_mamujoco_separate():
+    assert _madiff_env_name("mamujoco") == "mamujoco"
+    assert _madiff_env_name("gymnasium_mamujoco") == "gymnasium_mamujoco"
 
 
 def test_convert_vault_experience_preserves_episode_boundaries_and_fields():

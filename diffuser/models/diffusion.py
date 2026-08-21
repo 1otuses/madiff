@@ -102,11 +102,15 @@ class GaussianDiffusion(nn.Module):
         # 获取损失权重并初始化优化目标
         loss_weights = self.get_loss_weights(loss_discount, action_weight)
         loss_type = "state_l2" if self.use_inv_dyn else "l2"
-        self.loss_fn = Losses[loss_type](loss_weights)
+        self.loss_fn = (
+            Losses[loss_type](loss_weights)
+            if self.use_inv_dyn
+            else Losses[loss_type](loss_weights, self.action_dim)
+        )
 
     def _build_inv_model(self, hidden_dim: int, output_dim: int):
         # 构建逆动力学模型
-        '''
+        r'''
         \hat a_t ≈ inv_model( [o_t, o_{t+1}] )
         joint_inv: 联合动力学模型,将agents的观测o_i拼接,同时输出[a_1, ..., a_N].
         share_inv: 共享逆动力学模型,agents共享模型参数,agent独立输入o_i,输出动作a_i.
@@ -215,7 +219,9 @@ class GaussianDiffusion(nn.Module):
         env_ts: Optional[torch.Tensor] = None,  # [B, T+H]真实环境时间步编码
         attention_masks: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict] = None,
     ):
+        model_kwargs = model_kwargs or {}
         if self.returns_condition: # CFG
             # 根据预测目标不同,epsilon 也可能表示 数据x0 本身
             epsilon_cond = self.model(
@@ -224,6 +230,7 @@ class GaussianDiffusion(nn.Module):
                 env_timestep=env_ts,
                 attention_masks=attention_masks,
                 use_dropout=False,
+                **model_kwargs,
             )  # 不通过use和force,表示不使用dropout概率机制,而是强制使用条件编码信息
             epsilon_uncond = self.model(
                 x, t,
@@ -231,6 +238,7 @@ class GaussianDiffusion(nn.Module):
                 env_timestep=env_ts,
                 attention_masks=attention_masks,
                 force_dropout=True,
+                **model_kwargs,
             )  # 通过use和force,表示强制不使用条件编码信息(force=True会覆盖use)
             epsilon = epsilon_uncond + self.condition_guidance_w * (
                 epsilon_cond - epsilon_uncond
@@ -238,7 +246,11 @@ class GaussianDiffusion(nn.Module):
 
         else:  # 采用DM去噪学习数据分布~BC思想
             epsilon = self.model(
-                x, t, env_timestep=env_ts, attention_masks=attention_masks
+                x,
+                t,
+                env_timestep=env_ts,
+                attention_masks=attention_masks,
+                **model_kwargs,
             )  # 这里没有条件returns
 
         return epsilon
@@ -253,6 +265,7 @@ class GaussianDiffusion(nn.Module):
         attention_masks: Optional[torch.Tensor] = None,
         verbose: bool = True,
         return_diffusion: bool = False,
+        model_kwargs: Optional[Dict] = None,
     ):
         """
         conditions : [ (time, state), ... ]
@@ -260,7 +273,8 @@ class GaussianDiffusion(nn.Module):
 
         batch_size = cond["x"].shape[0]
         horizon = horizon or self.horizon + self.history_horizon
-        shape = (batch_size, horizon, self.n_agents, self.observation_dim)
+        sample_dim = self.observation_dim if self.use_inv_dyn else self.transition_dim
+        shape = (batch_size, horizon, self.n_agents, sample_dim)
 
         device = list(cond.values())[0].device
         if self.use_ddim_sample:
@@ -288,7 +302,12 @@ class GaussianDiffusion(nn.Module):
             # 2. 预测模型输出
             ts = torch.full((batch_size,), t, device=device, dtype=torch.long)
             model_output = self.get_model_output(
-                x, ts, returns, env_ts, attention_masks
+                x,
+                ts,
+                returns,
+                env_ts,
+                attention_masks,
+                model_kwargs=model_kwargs,
             )
 
             # 3. 计算上一扩散状态：x_t -> x_t-1
@@ -320,6 +339,7 @@ class GaussianDiffusion(nn.Module):
         returns: Optional[torch.Tensor] = None,
         env_ts: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict] = None,
     ):
         noise = torch.randn_like(x_start)
 
@@ -332,6 +352,7 @@ class GaussianDiffusion(nn.Module):
             returns=returns,
             env_timestep=env_ts,
             attention_masks=attention_masks,
+            **(model_kwargs or {}),
         )
 
         if not self.predict_epsilon:
@@ -478,6 +499,7 @@ class GaussianDiffusion(nn.Module):
         env_ts: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
         legal_actions: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict] = None,
     ):
         if self.train_only_inv:
             assert self.use_inv_dyn, "If train_only_inv, must use inv_dyn"
@@ -501,6 +523,7 @@ class GaussianDiffusion(nn.Module):
                     returns,
                     env_ts,
                     states,
+                    model_kwargs,
                 )
             else:
                 diffuse_loss, info = self.p_losses(
@@ -512,6 +535,7 @@ class GaussianDiffusion(nn.Module):
                     returns,
                     env_ts,
                     states,
+                    model_kwargs,
                 )
 
         if self.use_inv_dyn:
