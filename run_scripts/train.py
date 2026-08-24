@@ -20,6 +20,18 @@ def main(Config, RUN):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     utils.set_seed(Config.seed)
+
+    training_stage = getattr(Config, "training_stage", "diffusion")
+    if training_stage != "diffusion":
+        from mode_consistent.training import (
+            is_mode_training_stage,
+            train_mode_stage,
+        )
+
+        if not is_mode_training_stage(training_stage):
+            raise ValueError("unknown training_stage: {}".format(training_stage))
+        return train_mode_stage(Config, RUN)
+
     dataset_extra_kwargs = dict()
 
     # configs that does not exist in old yaml files

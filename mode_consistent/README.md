@@ -1,12 +1,8 @@
-# CI-CoDiff：分散 Diffusion MARL 的协调模态一致性
+# CI-CoDiff：离散协调 mode 条件扩散
 
-> 更新日期：2026-08-21。本文档只保留稳定的研究问题、相关工作、算法框架、benchmark 与复现入口。动态阶段状态、实验规划、脚本和证据审计见 [`RESEARCH_PROGRESS.md`](RESEARCH_PROGRESS.md)。
+> 更新日期：2026-08-24。本文档保留稳定的研究问题、整体算法和复现入口；精确张量契约与模块设计见 [`DESIGN.md`](DESIGN.md)，历史实验与待讨论结论见 [`RESEARCH_PROGRESS.md`](RESEARCH_PROGRESS.md)。
 
-算法接口、模块定义、benchmark 或复现命令变化时更新本文档。实验状态、研究决策、脚本或产物变化时更新研究进程文档。
-
-一次修改同时影响两类信息时，必须同步更新两份文件。
-
-当前代码提供可运行的工程框架，但尚未证明 mode 语义、局部可辨识性或最终 return 提升。
+当前代码实现了新的两阶段训练闭环，但尚未证明离散 code 等价于协调 mode、局部历史足以识别 mode，或 mode 条件策略能够提高环境 return。所有研究结论继续保持`pending_user_discussion`。
 
 ## 1. 研究问题
 
@@ -16,276 +12,211 @@
 mu(a_k | s_k) = sum_z p(z | s_k) prod_i mu_i(a_i | h_i^k, z)
 ```
 
-若各 agent 只拟合自己的边缘多模态分布并独立采样，就可能分别选择不同的 `z_i`。此时每个局部动作都来自数据，组合后的联合动作却不属于任何已见协调策略。
+若各 agent 只拟合自己的边缘多模态分布并独立采样，可能分别选择不同的 `z_i`。每个局部动作都来自数据，组合后的联合动作却不属于任何已见协调策略。
 
-当 `K` 个模态等概率、`N` 个 agent 独立选取模态时：
+当 `K` 个 mode 等概率、`N` 个 agent 独立选择 mode 时：
 
 ```text
 Pr(z_1 = ... = z_N) = K^(1-N)
 MMR = 1 - K^(1-N)
 ```
 
-本项目在 CTDE 框架下分别研究三个问题：
+本项目在 CTDE 框架下依次研究：
 
-1. **模态发现**：能否从无标签联合离线轨迹中学习代表协调策略的离散隐藏变量 `z`；
-2. **分散对齐**：执行时每个 agent 能否仅由局部历史 `h_i^t` 恢复一致的 mode；
-3. **策略改进**：mode 条件 diffusion 是否能在保持数据支持和低失配率的同时提高任务回报。
+1. **mode discovery**：能否从无标签联合轨迹中学到代表协调策略的离散变量 `z`；
+2. **decentralized identification**：执行时每个 agent 能否仅由局部历史恢复同一个匿名 code；
+3. **conditional generation**：离散 mode 能否作为 CFG 条件改变 diffusion 的联合角色，同时保持数据支持；
+4. **policy result**：以上条件是否最终改善 return、success 或 MMR。
 
-严格 Dec-POMDP 下存在信息边界：若相同局部历史对应多个 mode，且没有公共观测、共享随机性、通信或可观察行为前缀，任何局部模型都无法恢复采集时的 `z`。
+Mode 默认描述长度为 `H` 的协调片段，不强制整条 episode 使用同一个 mode。`H=25` 是当前 OMAR Simple Spread 的首个诊断点，不是固定结论。
 
-此时只能学习确定性公共约定、拒绝预测，或显式声明额外 correlation device。
+严格 Dec-POMDP 下存在不可绕过的信息边界：若相同局部历史对应多个 mode，且不存在公共观测、通信、共享随机性或可观察行为前缀，local prior 不可能恢复采集时的 `z`。此时只能学习确定性约定、输出 `unknown`，或把 CPA agreement key 明确标成额外 correlation device。
 
-## 2. 相关工作
+## 2. 与现有方法的关系
 
-| 方法 | 核心机制 | 本项目的借鉴与区别 |
+| 方法 | 借鉴 | 不直接照搬的部分 |
 | --- | --- | --- |
-| MADiff | 跨 agent attention；每个 agent 预测联合轨迹并执行自己的动作分量 | 作为 diffusion policy 主干；额外研究独立反向采样时的 mode 一致性 |
-| CPA | 自回归联合策略、VQ action pool、共享 agreement key | 借鉴 policy mismatch 问题与轨迹熵指标；共享 key 属于额外 correlation device |
-| VO-MASD | 对每个 agent 的 `H` 步轨迹编码；用全局状态动态分组，并以组大小相关的 codebook 量化 multi-agent skill | 借鉴时间片段编码、VQ、动作解码和“预训练后冻结”；本项目学习全队共享 coordination mode，不照搬 3D subgroup、全局 grouper 或在线 MAPPO |
-| CLS-DP Contextualizer | 用未来联合动力学 posterior 对齐局部 observation prior | 借鉴 privileged teacher 到 local student；改为共享离散 team code，并评估 agreement 与 unknown |
-| DoF / OMSD | diffusion 分解、链式行为策略与条件 score 正则 | 可改善分布建模，但分解本身不保证多个 agent 在执行前选择同一协调模态 |
-| MIMIC-D / CoDiMAD | joint supervision 与协作 latent | 属于最近邻工作；本项目重点区分离散 mode 的可识别性与严格信息权限 |
+| MADiff | Diffusion、Temporal U-Net、return CFG、训练与评估通道 | 移除跨 agent attention；不再宣称具有原 MADiff 的逐步 teammate interaction |
+| CPA | policy mismatch、VQ action pool、条件负对照 | shared seed/time agreement key 只作为 privileged 扩展 |
+| VO-MASD | `H` 步轨迹编码、VQ、agent-specific skill、动作重建 | 不引入动态 subgroup、全局 grouper 或在线 MAPPO |
+| CLS-DP Contextualizer | privileged posterior 到 local prior 的蒸馏 | 使用匿名离散团队 code，并显式评估 coverage/agreement |
 
-本项目的定位是：**相关协调模态的分散可实现性、诊断协议与 mode 条件 diffusion**。
+VQ 的动作重建目标只说明 code 对行为有预测价值，不自动说明 code 是协调 convention。因此 reconstruction、code-shuffle、assignment NMI、collector NMI 和局部可辨识性必须分开报告。
 
-### 2.1 VO-MASD 源码比较后的设计选择
-
-VO-MASD 与本项目都使用轨迹编码、离散量化和行为解码，但隐藏变量的语义与执行路径不同：
-
-| 组件 | VO-MASD | CI-CoDiff 的选择 |
-| --- | --- | --- |
-| 时间编码 | 每个 agent 的 `H` 步 observation/action 经实体注意力和双向 GRU 得到连续 skill | 保留 `H` 步原始轨迹输入；当前共享 GRU 编码每个 agent，再聚合为一个团队表示 |
-| agent 结构 | 全局 state 驱动 MAT grouper；按动态 subgroup 量化 | 第一阶段将所有 agent 视为一个固定团队，不增加 3D subgroup 层 |
-| codebook | 每个组大小 `m` 使用一个 `K × (mD)` codebook，量化后再拆成 agent-specific skill | 使用单个 `K × D` 团队 codebook；所有 agent 共享 code ID，再由 agent identity 解码各自行为 |
-| 解码目标 | recurrent decoder 在 skill 条件下重建 `H` 步离散动作概率 | 用共享 mode、局部 observation 和 agent identity 重建 `H` 步连续动作均值 |
-| 训练目标 | 动作负对数似然、VQ 距离；grouper 另以 PPO 优化重建/量化内在回报 | 动作 MSE 与 VO-MASD 权重方向的 VQ 损失；encoder commitment 权重为 1，codebook 更新权重 `beta=0.001` |
-| 下游使用 | 冻结 skill 模块，由高层 MAPPO 周期性选择 skill | 冻结中央匿名 code，蒸馏到局部 aligner，再作为离线 diffusion 条件 |
-
-VO-MASD 的 VQ 目标保证 code 有助于动作重建，但不保证 code 等价于协调 convention。当前 P2 因此将整条 `H=25` episode 绑定为一个 code，并把 assignment 对齐、code-shuffle 和 no-code 对照作为独立阶段门；重建误差下降本身不构成 mode discovery 成功。
-
-## 3. 核心算法 pipeline
+## 3. 推荐模型流程
 
 ```text
-无标签联合离线轨迹 D_train
-        |
-        v
-1. CentralModeVQVAE q_psi(tau_joint[0:H]) -> 离散团队 mode z_episode
-   per-agent 时间编码 -> 固定团队聚合 -> K×D codebook
-   H=25 整条 episode 只产生一个共享 code ID
-        | 冻结匿名 teacher code
-        v
-2. LocalModeAligner g_i(h_i^t) -> c_i / unknown
-   每个 agent 只读取自身 observation 与过去动作
-        | 局部 code 通过可辨识性阶段门
-        v
-3. 无 attention Temporal U-Net + Diffusion
-   以离散 mode 和 team return-to-go 为双条件做 classifier-free guidance
-        | 每个 focal agent 只执行自己的动作分量
-        v
-4. ModeValueModel V(s,z) 与集中 evaluator
-   拟合数据内回报，并评估 MMR、coverage、support 与 return
-        |
-        v
-严格分散执行
+无标签联合窗口 (o[1:N,1:H], a[1:N,1:H], mask)
+                     │
+                     ▼
+      TeamModeVQVAE privileged posterior
+   shared agent GRU → team encoder → VQ nearest code k
+                     │
+              E ∈ R^(K×N×D)
+            E[k,i] = agent i role
+              ┌──────┴────────┐
+              ▼               ▼
+ observation-conditioned   LocalModePrior
+ action decoder            p_i(k | o_i^≤t, a_i^<t)
+              │               │
+              └──────┬────────┘
+                     ▼
+      return embedding + E[k,i] + agent identity
+                     │
+                     ▼
+        ModeTemporalUnet（无 agent attention）
+                     │
+                     ▼
+  ModeGaussianDiffusion 生成局部 observation trajectory
+                     │
+                     ▼
+ Local inverse dynamics g(o_i^t,o_i^{t+1}) → a_i^t
+                     │
+                     ▼
+  MPE Simple Spread 真实 rollout → return + MP4
 ```
 
-训练接口通过 `UnlabeledEpisodeView` 建立标签防火墙。表示学习模块只能接收 `observations`、`actions` 和 `mask`；`true_modes`、collector、quality、scenario 与奖励只保留在数据划分和集中评估层。
+训练分为两个 checkpoint：
 
-## 4. 模块说明
+1. `mode_stage1`：联合训练 privileged posterior、`K×N×D` codebook、动作 decoder 和 local prior；prior 的监督 code 使用 `stop-gradient`，并随机抽取可见历史 prefix。
+2. `mode_stage2`：加载并冻结 stage1，复制 role codebook 到 U-Net；Diffusion 只生成 observation，local inverse-dynamics 网络由每个 agent 自身的相邻 observation 生成动作。
 
-### 4.1 中央离散 mode 教师
+只有 posterior 条件相对 shuffle/no-mode 有稳定增益后，才应把 `mode_source_train` 改为 `local` 或进行 local-conditioned 微调。
 
-[`CentralModeVQVAE`](models/central_mode.py) 先用共享 GRU 分别编码长度为 `H=25` 的各 agent observation/action 轨迹，再结合 agent identity 聚合为一个团队表示。完整 episode 只映射到一个共享团队 VQ code；共享的 per-agent decoder 接收当前局部观测、团队 code 和 agent identity，输出连续动作均值。
+## 4. 实现模块
 
-令 encoder 输出为 `z_e`、最近码本向量为 `e_z`，损失为：
+- [`TeamModeVQVAE`](models/team_mode_vqvae.py)：privileged posterior、`K×N×D` role codebook、observation-conditioned action decoder 与严格局部 prior。
+- [`ModeTemporalUnet`](models/mode_temporal.py)：共享参数、无跨 agent attention；正确展平 `batch×agent`，将 `E[k,i]` 作为原生 residual context。
+- [`ModeGaussianDiffusion`](models/mode_diffusion.py)：冻结 mode checkpoint、observation-only diffusion、local inverse dynamics、四状态训练掩码和 `RTG → mode` 三分支链式 CFG。
+- [`ModeSequenceDataset`](data/sequence.py)：EpisodeStore 全量训练窗口、可选离线 holdout、原 MADiff normalizer 选择和训练标签防火墙。
+- [`ModeVQObjective`](objectives/mode_vq.py)：在 stage1 联合训练 VQ teacher 与 local prior，并用 `stop-gradient` 隔离 prior target。
+- [`ModeOnlineEvaluator`](evaluation/mode_online_evaluator.py)：通过原 `evaluate.py` 加载 stage2 checkpoint，在真实 Simple Spread 环境中滚动规划，输出环境 return 和实际 rollout 视频。
+- [`ModeVQEvaluator` 与 `ModeConditionedEvaluator`](evaluation/mode_evaluator.py)：保留为显式离线诊断接口，不属于当前正式评估配置。
+
+基础 [`TemporalUnet`](../diffuser/models/temporal.py) 只增加了默认关闭的 `context_dim=0` 接口；原 MADiff 配置不提供 context 时，参数结构和调用方式不变。
+
+## 5. 信息权限
+
+训练 batch 允许：
 
 ```text
-L = L_action + ||z_e - sg(e_z)||^2 + beta ||e_z - sg(z_e)||^2
-beta = 0.001
+observations, actions, valid mask
 ```
 
-Decoder 使用固定方差高斯解释时，动作 MSE 与负对数似然只差常数和尺度。受控数据中的 assignment 标签只用于训练结束后的 NMI、ARI 和 best-mapping accuracy，不进入模型输入或损失。
+VQ posterior 在训练期可读取完整联合窗口。Local prior 只能读取第 `i` 个 agent 的 observation 和滞后一拍的自身 action；当前动作、其他 agent 轨迹、true mode、collector、scenario、quality 和 reward label 均不得进入 prior。
 
-这里有意采用二维 `K × D` 团队 codebook，而不是 VO-MASD 按 subgroup 大小建立的三维结构。固定 agent identity 由 decoder 单独接收，使同一 mode ID 可以生成不同 agent 的兼容角色，同时避免为各 agent 独立量化后再次产生 mode mismatch。若未来研究动态 subgroup，必须作为独立扩展验证，不能混入当前 P2 的修正。
+Stage2 的 U-Net 将 agent 维展平后独立去噪，每个 slice 只生成该 agent 的 observation trajectory。Inverse dynamics 只接收 `[o_i^t,o_i^{t+1}]`；`joint_inv=true` 被明确拒绝。
 
-VO-MASD 的双向 GRU、recurrent action decoder 或更复杂 codebook 都可能提高重建容量，却不会自动解决当前 code 编码运动阶段而非 assignment 的问题。因此在中央 mode 语义通过前，不以增加这些容量模块作为默认修正。
+`true_modes`、collector 和 scenario 只由冻结 evaluator 通过 `audit_labels()` 读取。Reward 只用于 diffusion 的团队 RTG 和最终评估，不监督 VQ code。
 
-P2 的正式训练和审计协议位于 [`experiments/central_mode.py`](experiments/central_mode.py)。它先冻结 train/validation/test，再强制 `trajectory_scope=full_episode`、`window_horizon=数据 horizon`和 `stride=1`；保存数据、split 和轨迹协议，并确保训练 checkpoint 不包含审计标签。旧 H=5 checkpoint 仅以显式 `standard` VQ 兼容语义读取，不与新证据混用。
+## 6. CFG 条件
 
-### 4.2 局部 mode 对齐器
+采用 [InstructPix2Pix](https://arxiv.org/html/2211.09800v2) 的链式 CFG 结构，将原 MADiff 的 RTG 作为第一层基础条件，将离散 mode 作为给定 RTG 后的增量条件。定义四个可训练的噪声预测：
 
-[`LocalModeAligner`](models/local_context.py) 为所有 agent 共享同一个 GRU。每个 agent 只输入自己的 observation、上一时刻自身 action 和本地可知的 agent identity，不读取其他 agent 的真实历史。
+```text
+epsilon_un  = epsilon_theta(x_t, t, empty, empty)  # all unconditional
+epsilon_r   = epsilon_theta(x_t, t, RTG,   empty)  # return only
+epsilon_m   = epsilon_theta(x_t, t, empty, z)      # mode only
+epsilon_all = epsilon_theta(x_t, t, RTG,   z)      # all conditions
+```
 
-模型以中央匿名 code 为蒸馏目标，同时使用跨 agent agreement loss。执行时，低于置信度阈值的预测记为 `unknown=-1` 并进入无条件 diffusion 分支。
+训练时不是分别进行两个独立 Bernoulli dropout，而是每个 minibatch 采样一个四状态掩码。`empty/empty`、`RTG/empty`、`empty/z` 各以 `p_cfg` 出现，完整条件以 `1-3p_cfg` 出现；默认 `p_cfg=0.05`。该掩码只是保证所需分支都接受监督，不代表 RTG 与 mode 在概率上独立。
 
-VO-MASD 的全局 grouper 属于集中训练中的 skill discovery 组件，不能替代该局部 aligner。执行期若使用 global state 重新分组或广播 group/code，就不再是本项目要求的严格 decentralized execution。
+双条件推理固定执行三次 U-Net 前向：
 
-### 4.3 mode 条件 MADiff
+```text
+epsilon_hat = epsilon_un
+            + w_R (epsilon_r   - epsilon_un)
+            + w_z (epsilon_all - epsilon_r)
+```
 
-目标策略模块沿用 MADiff 的时序 U-Net 尺度结构，但使用基础无 attention 版本，并以离散 mode 与团队 return-to-go 作为双条件 CFG。VO-MASD 的 recurrent decoder 只用于中央表示学习约束，不是最终策略。
+第二个差分是在 RTG 已知时增加 mode 的效果，因此不需要假设 `RTG` 与 `z` 在给定噪声轨迹后相互独立。链的顺序有意义：当前固定为 `empty → RTG → RTG+z`，因为 RTG 是 MADiff 原有的任务质量条件，mode 是新增的协调选择；当 `w_R=w_z=1` 时公式恰好退化为 `epsilon_all`。`epsilon_m` 仍在训练中出现，用于 mode-only 单条件回退和诊断，但双条件链不计算它。
 
-仓内现有 [`ModeConditionedDenoiser`](models/conditional_diffusion.py) 是旧 v0 的 FiLM/CFG 工程 seam；它仍使用 attention 主干，且没有 RTG 双条件，因此不是上述最新算法的正式实现。在 P2 证据讨论前不继续扩写该模块。
+[Decision Diffuser 附录 D](https://arxiv.org/html/2211.15657v4) 的并行组合可写成：
 
-### 4.4 mode 价值与集中评估
+```text
+epsilon_hat_ind = epsilon_un
+                + w [epsilon_r - epsilon_un
+                     + epsilon_m - epsilon_un]
+```
 
-[`ModeValueModel`](models/value.py) 根据集中初始状态和匿名 mode 拟合数据集回报。当前模块只验证数据支持内的 value seam，不能把未出现的 `(s,z)` 外推值直接当作可靠 mode 选择依据。
+其推导假设各条件在给定噪声轨迹 `x_t` 后条件独立。RTG 来自轨迹回报，而 mode 又概括同一轨迹的协调行为，两者预期存在耦合，因此当前实现不提供该并行/因子化开关；它只保留为未来受控消融，不作为默认框架。
 
-它与 VO-MASD 中为 subgroup PPO 服务的 value head 不同：当前 value model 不参与中央 VQ 分组或 codebook 训练，也不构造内在奖励。
+`unknown=-1` 使用零 role 向量；若整个 batch 都是 unknown，推理退化为标准 RTG-only CFG。Agent identity 属于共享策略的结构信息，不随 mode 一起丢弃。评估配置分别用 `condition_guidance_w` 和 `mode_guidance_w` 控制 `w_R`、`w_z`。
 
-[`evaluation/metrics.py`](evaluation/metrics.py) 分开计算 mode recovery、分散一致性、行为支持和任务结果，避免用单一 return 掩盖 mode collapse 或联合动作失配。
+## 7. 全量训练与在线评估
 
-## 5. Benchmark 数据集与指标
+正式配置设置 `eval_fraction=0.0`，stage1 和 stage2 都使用数据文件中的全部 episode；不再从离线数据中扣除 validation/test episode。Normalizer 由完整训练文件的有效 observation/action 拟合。RTG 不拟合 z-score 统计，而是沿用 MADiff：从窗口起点 `t` 累积到 episode 末尾并除以 `returns_scale`；`H` 只控制模型轨迹窗口，不截断 RTG。正式 Simple Spread 配置为 `discount=0.99`、`returns_scale=700`。`eval_fraction>0` 只保留给显式离线诊断：有 `scenario_ids` 时按 scenario group holdout，否则优先在 collector 内分层，最后才按固定 seed 随机划分。
 
-所有外部数据保存在 `/home/lotus/lotus/lhh/offline_datasets`。
+正式策略评估不读取离线 episode，而是在新建的 `simple_spread` 环境中执行。每个环境步：
 
-| Benchmark | 数据位置 | 主要用途 | 当前适用范围 |
-| --- | --- | --- | --- |
-| Role-ID XOR | `mode_consistent/prototypes/` | 隔离验证独立 mode 采样的相关性缺口 | 验证理论 MMR、团队规模和公共 cue 可用率 |
-| OMAR MPE Spread / Tag / World | `offline_datasets/OMAR/mpe/` | 无标签训练中央 VQ，并判断现有数据是否包含多种高回报行为结构 | Spread 的转换、分层划分和无标签评估已实现；Tag/World 的 tactic 定义仍需建立 |
-| 受控 paired Simple Spread | `offline_datasets/CI-CoDiff/mpe/simple_spread/` | 确定性 PD 专家控制器在环境中在线 rollout，同一场景分别执行六种 assignment；不是 OMAR 数据或在线 MARL 策略 | 验证 mode discovery、局部可辨识性和条件策略 |
-| OG-MARL SMAC | `offline_datasets/OG-MARL-Vault/smac/` | 检验复杂部分可观测协作任务上的外部效度 | 数据已保存，正式适配与 tactic 定义尚未完成 |
+1. 每个 agent 用自己的 `o_i^0:t,a_i^0:t-1` 更新 local mode；
+2. observation-only Diffusion 以当前局部观测重新规划；
+3. local inverse dynamics 从生成的 `o_i^t,o_i^(t+1)` 得到动作；
+4. 将动作送入真实环境，累计实际 reward，并渲染实际环境帧。
 
-正式评估至少联合报告以下指标：
+至少报告：
 
-| 目标 | 指标 |
+| 层级 | 指标 |
 | --- | --- |
-| mode recovery | NMI、ARI、best-mapping accuracy、code usage、perplexity、轨迹 code entropy |
-| 无标签条件有效性 | VQ/no-code reconstruction、code-shuffle degradation、collector NMI、按 code 回报、终态 assignment NMI |
-| decentralized realizability | MMR、agreement、coverage、consensus entropy、unknown rate |
-| behavior support | mode 条件联合动作或轨迹最近邻距离、support violation |
-| task result | return、success/win rate、time-to-agreement |
-| cost | 训练预算、denoising steps、推理时间 |
+| posterior | action reconstruction、code usage、perplexity、assignment NMI/ARI、collector NMI |
+| local prior | posterior-code accuracy、coverage、unknown rate、agreement、MMR、prefix 曲线 |
+| diffusion | posterior/local/shuffle/no-mode，固定 observation/return/noise 下的条件差异 |
+| environment | return、success、mode fidelity、support distance、多 seed 方差 |
 
-## 6. 复现命令
+结果中的 team return 定义为各 agent 环境累计 return 的均值。MP4 记录实际环境 rollout，不是将预测 observation 直接渲染成“真实结果”。离线 first-action MSE 仍只是一种诊断，不等价于环境 return。
 
-以下命令均从仓库根目录执行。
+## 8. 复现入口
 
-### 6.1 软件回归与 motivating example
+从仓库根目录运行软件测试：
 
 ```bash
-cd /home/lotus/lotus/lhh/madiff
-
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-  conda run -n madiff pytest -q tests/mode_consistent
-
-conda run -n madiff \
-  python -m mode_consistent.prototypes.xor_motivating_example
+  conda run --no-capture-output -n madiff \
+  pytest tests/mode_consistent -q
 ```
 
-### 6.2 生成受控 paired MPE 数据
+当前配置文件 `expert_unlabeled_h25.npz` 的实际头信息是 20 万条 horizon-25 episode，即 5M 个联合环境步或 15M 个 agent-step；按常用 transition 口径不是 100M。正式配置不设置 `max_n_episodes` 上限，并设置 `eval_fraction=0.0`，因此完整文件全部参与训练。若 100M 指另一份数据，只需替换两个 stage 的 `dataset_path`，并先核对相同的 episode tensor contract。两个阶段统一使用 `CDFNormalizer`，必须按顺序执行：
+
+| 阶段 | 模型规模与优化预算 | 最终 checkpoint |
+| --- | --- | --- |
+| stage1：VQ + local prior | `hidden=128, mode_dim=32, batch=128, 10,000 joint updates` | `state_10000.pt` |
+| stage2：DM + inverse dynamics | `TemporalUnet dim=128, [1,2,4,8], T=200, batch=32×accumulation 2, 1,000,000 updates` | `state_1000000.pt` |
 
 ```bash
-DATA_ROOT=/home/lotus/lotus/lhh/offline_datasets/CI-CoDiff
-PAIRED_DATA="$DATA_ROOT/mpe/simple_spread/balanced_6mode_expert_seed0.npz"
-
-test -f "$PAIRED_DATA" || \
-  conda run -n madiff python -m mode_consistent.scripts.generate_mpe_dataset \
-    --output "$PAIRED_DATA" --n-scenarios 1000 \
-    --mode-ids 0 1 2 3 4 5 --qualities expert --horizon 25 --seed 0
-```
-
-这里的 `expert` 表示无噪声、无 dropout 的固定 assignment PD 控制器。数据由控制器与 MPE 环境交互 rollout 得到，不来自 MAPPO/QMIX 等 online MARL 训练，也不是 OMAR 提供的专家数据。
-
-### 6.3 可视化固定 seed 下的六种 mode
-
-```bash
-conda run -n madiff python -m mode_consistent.scripts.render_mpe_modes \
-  --seed 0 --horizon 25 --mode-ids 0 1 2 3 4 5 \
-  --output-dir mode_consistent/artifacts/mpe_mode_videos/seed0
-```
-
-该脚本复用数据生成器的同一个控制器，输出六个单独视频、同屏比较视频、终态轨迹图和包含 assignment、终点距离、回报与碰撞步数的 `summary.json`。
-
-### 6.4 CPU 最小 pipeline
-
-```bash
-SMOKE_DATA=/tmp/ci_codiff_mpe_smoke.npz
-test -f "$SMOKE_DATA" || \
-  conda run -n madiff python -m mode_consistent.scripts.generate_mpe_dataset \
-    --output "$SMOKE_DATA" \
-    --n-scenarios 6 --mode-ids 0 1 --horizon 4 --seed 7
-
-conda run -n madiff python -m mode_consistent.scripts.run_pipeline \
-  "$SMOKE_DATA" --output /tmp/ci_codiff_pipeline.pt \
-  --n-modes 2 --central-steps 2 --local-steps 2 \
-  --value-steps 2 --diffusion-steps 2 --diffusion-timesteps 2 \
-  --local-prefix 1 --confidence-threshold 0 --device cpu
-```
-
-该命令只验证数据形状、信息权限、梯度、checkpoint 和采样路径，不评价算法效果。
-
-### 6.5 选择 GPU 运行冻结数据
-
-```bash
-nvtop
-
-nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu \
-  --format=csv,noheader
-
-GPU_ID=3  # 示例；运行前改为当时的空闲卡
-PAIRED_DATA=/home/lotus/lotus/lhh/offline_datasets/CI-CoDiff/mpe/simple_spread/balanced_6mode_expert_seed0.npz
-RUN_DIR=mode_consistent/runs/pipeline_seed0
-mkdir -p "$RUN_DIR"
-
-CUDA_VISIBLE_DEVICES="$GPU_ID" conda run -n madiff \
-  python -m mode_consistent.scripts.run_pipeline "$PAIRED_DATA" \
-  --output "$RUN_DIR/checkpoint.pt" \
-  --summary "$RUN_DIR/summary.json" \
-  --n-modes 6 --seed 0 --device cuda
-```
-
-设置 `CUDA_VISIBLE_DEVICES` 后，所选物理卡映射为进程内 `cuda:0`，因此 runner 使用 `--device cuda`。
-
-当前 GPU 命令仍是工程基线；论文实验需按研究进程文档中的阶段门冻结配置并运行多 seed。
-
-### 6.6 P2 中央 mode 训练/评估入口 smoke
-
-以下命令复用 6.4 按需生成的 `/tmp/ci_codiff_mpe_smoke.npz`。`-g -1` 隐藏 GPU 并使用 CPU；GPU smoke 应先用 `nvtop` 选卡，再替换为对应编号。
-
-```bash
-conda run -n madiff python run_experiment.py \
-  -e exp_specs/mode_consistent/p2_central_smoke.yaml -g -1
-
-conda run -n madiff python run_experiment.py \
-  -e exp_specs/mode_consistent/eval_p2_central_smoke.yaml -g -1
-```
-
-该配置只有 2 个训练 step，只验证 YAML variant、三分 scenario split、标签防火墙、checkpoint、恢复信息和 evidence 输出。评估结果固定标记为 `pending_user_discussion`，不能据此判断 P2 是否有效。
-
-### 6.7 OMAR Spread `H=25` 整轨迹 P2
-
-转换后的训练文件只保存轨迹、回报、mask 和 `collector_ids`，不制造 `true_modes`。`collector_ids` 只用于分层划分和冻结后的审计，不进入模型输入或 checkpoint。
-
-```bash
-OMAR_ROOT=/home/lotus/lotus/lhh/offline_datasets/OMAR/mpe
-OMAR_DATA=/home/lotus/lotus/lhh/offline_datasets/CI-CoDiff/omar/simple_spread/expert_unlabeled_h25.npz
-
-test -f "$OMAR_DATA" || \
-  conda run -n madiff python -m mode_consistent.scripts.convert_omar_mpe \
-    --dataset-root "$OMAR_ROOT" --task simple_spread --horizon 25 \
-    --n-agents 3 --output "$OMAR_DATA"
-
-# 先用 nvtop 或 nvidia-smi 选择空闲卡，再替换 GPU_ID。
 GPU_ID=0
+
 conda run -n madiff python run_experiment.py \
-  -e exp_specs/mode_consistent/p2_omar_spread_h25_seed0.yaml -g "$GPU_ID"
+  -e exp_specs/mode_consistent/stage1_omar_spread_h25_seed0.yaml -g "$GPU_ID"
+
 conda run -n madiff python run_experiment.py \
-  -e exp_specs/mode_consistent/eval_p2_omar_spread_h25_seed0.yaml -g "$GPU_ID"
+  -e exp_specs/mode_consistent/stage2_omar_spread_h25_seed0.yaml -g "$GPU_ID"
 ```
 
-正式配置固定 `H=25`、`K=6`、`beta=0.001`、batch 128 和 1600 updates。14 万个 train episode 下约为 1.46 个 train pass，与旧 H=5 评估的数据暴露量对齐。评估只比较 VQ、no-code 和冻结 VQ 的 code-shuffle，不使用 oracle mode。输出仍标记为 `pending_user_discussion`。正式运行尚未执行，需先确认单 seed 预算。
+每个正式训练配置都设置了 `continue_training: true`；重复执行同一命令时会从该实验目录内的最新 checkpoint 继续。Stage2 固定加载 stage1 的 `state_10000.pt`，因此不能跳过或交换阶段。完整数据会整体载入内存，启动正式训练前应确认系统内存充足。
 
-只验证入口时，每个 collector 取 8 条 episode：
+`normalizer` 可选择原 [`diffuser/datasets/normalization.py`](../diffuser/datasets/normalization.py) 中的 `CDFNormalizer`、`GaussianNormalizer`、`LimitsNormalizer`、`SafeLimitsNormalizer` 或 `DebugNormalizer`。正式配置默认 CDF；在线 evaluator 从训练配置重新构造同一完整数据统计。完整数据和精确 CDF 会整体占用较多内存，正式运行前应预留足够 RAM。
+
+训练完成后，真实环境评估仍走原 `run_scripts/evaluate.py`：
 
 ```bash
-conda run -n madiff python -m mode_consistent.scripts.convert_omar_mpe \
-  --dataset-root "$OMAR_ROOT" --task simple_spread --horizon 25 \
-  --max-episodes-per-collector 8 \
-  --output /tmp/ci_codiff_omar_spread_smoke.npz
-conda run -n madiff python run_experiment.py \
-  -e exp_specs/mode_consistent/p2_omar_spread_h25_smoke.yaml -g -1
-conda run -n madiff python run_experiment.py \
-  -e exp_specs/mode_consistent/eval_p2_omar_spread_h25_smoke.yaml -g -1
+conda run -n madiff python run_scripts/evaluate.py \
+  -e exp_specs/mode_consistent/eval_stage2_omar_spread_h25_seed0.yaml -g "$GPU_ID"
 ```
 
-2-step smoke 只证明 `H=25 -> 单 code -> checkpoint -> 冻结评估` 可执行；其 code usage 或 reconstruction 数值不构成有效性证据。
+正式 evaluator 加载 `state_1000000.pt`，使用 seeds 1000–1009 执行 10 个 horizon-25 episode，并为前三个 episode 保存 MP4。JSON 写入 stage2 实验目录的 `results/`，视频写入带 sampler/CFG 权重后缀的 `videos/step_1000000-*/`，避免不同引导权重互相覆盖。`test_ret=0.9` 表示缩放后的初始 RTG 条件（对应初始未缩放目标 `0.9×700=630`），不是 z-score，也不表示最优 return 为 1。正式配置保持 MADiff 默认的 `use_return_to_go=false`，因此每一步固定使用 0.9；只有显式启用后，才会减去已获得团队 reward 并按 `discount` 更新剩余 RTG。实测值单独以 `average_team_return`、逐 agent return 和逐 episode return 保存。当前不在 rollout 中使用 privileged posterior，也不从多个 agent 的 mode 投票。
+
+正式配置已经可运行，但本仓库尚未执行这些新训练，因此不产生新的研究结论。`n_train_steps=1,000,000` 是 optimizer update 数；不要与 `n_diffusion_steps=200` 个噪声时间步混淆。
+
+当前只保留两个正式训练配置和一个 stage2 在线评估配置；软件级快速验证由 `tests/mode_consistent` 覆盖。正式训练与 rollout 尚未实际执行，seed 0/十个评估场景仍只用于先观察信号，不构成多 seed 论文结论。
+
+Motivating example 与受控 paired MPE 数据生成入口继续保留：
+
+```bash
+conda run -n madiff python -m mode_consistent.prototypes.xor_motivating_example
+
+conda run -n madiff python -m mode_consistent.scripts.generate_mpe_dataset \
+  --output /path/to/balanced_6mode_expert_seed0.npz \
+  --n-scenarios 1000 --mode-ids 0 1 2 3 4 5 \
+  --qualities expert --horizon 25 --seed 0
+```

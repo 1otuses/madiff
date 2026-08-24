@@ -8,6 +8,7 @@ from .omar_mpe import (
     build_omar_episode_store,
     iter_expert_collectors,
 )
+from .sequence import ModeDatasetNormalizer, ModeSequenceDataset, split_episode_indices
 
 __all__ = [
     "EpisodeStore",
@@ -16,4 +17,7 @@ __all__ = [
     "OMARCollectorEpisodes",
     "build_omar_episode_store",
     "iter_expert_collectors",
+    "ModeDatasetNormalizer",
+    "ModeSequenceDataset",
+    "split_episode_indices",
 ]

@@ -213,6 +213,8 @@ class TemporalUnet(nn.Module):
         returns_condition: bool = False,
         env_ts_condition: bool = False,
         condition_dropout: float = 0.1,
+        context_dim: int = 0,
+        context_dropout: float = 0.1,
         kernel_size: int = 5,
         max_path_length: int = 100,
     ):
@@ -239,6 +241,8 @@ class TemporalUnet(nn.Module):
         self.returns_condition = returns_condition
         self.env_ts_condition = env_ts_condition
         self.condition_dropout = condition_dropout
+        self.context_dim = context_dim
+        self.context_dropout = context_dropout
         self.history_horizon = history_horizon
 
         if self.returns_condition:
@@ -259,6 +263,21 @@ class TemporalUnet(nn.Module):
                 act_fn,
                 nn.Linear(dim * 4, dim),
             )
+            embed_dim += dim
+
+        if self.context_dim:
+            if self.context_dim < 0:
+                raise ValueError("context_dim must be non-negative")
+            if not 0.0 <= self.context_dropout < 1.0:
+                raise ValueError("context_dropout must be in [0, 1)")
+            self.context_mlp = nn.Sequential(
+                nn.Linear(self.context_dim, dim),
+                act_fn,
+                nn.Linear(dim, dim * 4),
+                act_fn,
+                nn.Linear(dim * 4, dim),
+            )
+            self.context_mask_dist = Bernoulli(probs=1 - self.context_dropout)
             embed_dim += dim
 
         self.embed_dim = embed_dim
@@ -354,6 +373,9 @@ class TemporalUnet(nn.Module):
         attention_masks=None,
         use_dropout=True,
         force_dropout=False,
+        context=None,
+        use_context_dropout=True,
+        force_context_dropout=False,
     ):
         """
         x : [ batch x horizon x transition ]
@@ -382,6 +404,26 @@ class TemporalUnet(nn.Module):
             env_timestep = env_timestep[:, self.history_horizon]
             env_ts_embed = self.env_ts_mlp(env_timestep)
             t = torch.cat([t, env_ts_embed], dim=-1)
+
+        if self.context_dim:
+            if context is None:
+                context_embed = torch.zeros(
+                    x.shape[0], self.time_dim, device=x.device, dtype=x.dtype
+                )
+            else:
+                if context.shape != (x.shape[0], self.context_dim):
+                    raise ValueError(
+                        "context must have shape [batch, context_dim]"
+                    )
+                context_embed = self.context_mlp(context)
+                if use_context_dropout and self.training:
+                    mask = self.context_mask_dist.sample(
+                        sample_shape=(context_embed.size(0), 1)
+                    ).to(context_embed.device)
+                    context_embed = mask * context_embed
+                if force_context_dropout:
+                    context_embed = 0 * context_embed
+            t = torch.cat([t, context_embed], dim=-1)
 
         h = []
 

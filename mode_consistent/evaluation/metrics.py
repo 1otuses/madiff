@@ -188,6 +188,7 @@ def mode_discovery_metrics(predicted: np.ndarray, target: np.ndarray) -> Dict:
     return {
         "mode_accuracy": float((aligned == target).mean()),
         "mode_nmi": normalized_mutual_information(predicted, target),
+        "mode_ari": adjusted_rand_index(predicted, target),
         "mode_perplexity": float(perplexity),
         "mode_usage": counts.tolist(),
         "mode_mapping": mapping,

@@ -1,0 +1,49 @@
+meta_data:
+  exp_name: ci_codiff_mode_stage1_omar_spread_h25_seed0
+  script_path: run_scripts/train.py
+  num_workers: 1
+  job_name: mode_stage1/omar_spread_h25/seed0
+
+variables:
+  seed: [0]
+
+constants:
+  training_stage: mode_stage1
+  dataset_path: /mnt/disk1/users/lhh/offline_datasets/CI-CoDiff/omar/simple_spread/expert_unlabeled_h25.npz
+  loader: mode_consistent.data.ModeSequenceDataset
+  normalizer: CDFNormalizer
+  model: mode_consistent.models.TeamModeVQVAE
+  diffusion: mode_consistent.objectives.ModeVQObjective
+  evaluator: mode_consistent.evaluation.ModeVQEvaluator
+  renderer: mode_consistent.training.NullRenderer
+
+  n_agents: 3
+  horizon: 25
+  stride: 25
+  eval_fraction: 0.0
+  max_n_episodes: null
+  use_padding: true
+
+  n_modes: 6
+  mode_hidden_dim: 128
+  mode_dim: 32
+  prior_hidden_dim: 128
+  agent_embedding_dim: 8
+  codebook_weight: 1.0
+  commitment_weight: 0.25
+  prior_loss_weight: 1.0
+  random_prior_prefix: true
+
+  n_train_steps: 10000
+  n_steps_per_epoch: 1000
+  batch_size: 128
+  learning_rate: 0.0003
+  gradient_accumulate_every: 1
+  ema_decay: 0.995
+  log_freq: 100
+  save_freq: 1000
+  save_checkpoints: true
+  eval_freq: 0
+  use_tensorboard: true
+  show_progress: true
+  continue_training: true

@@ -1,6 +1,6 @@
 # CI-CoDiff 研究进程、实验规划与证据审计
 
-> 更新日期：2026-08-21。本文档记录动态研究过程，包括阶段状态、实验决策、数据审计、脚本、产物、失败结果与下一步计划。稳定的研究问题、算法定义、benchmark 和复现入口见 [`README.md`](README.md)。
+> 更新日期：2026-08-23。本文档记录动态研究过程，包括阶段状态、实验决策、数据审计、脚本、产物、失败结果与下一步计划。稳定的研究问题和复现入口见 [`README.md`](README.md)，精确实现契约见 [`DESIGN.md`](DESIGN.md)。
 
 实验状态、研究决策、脚本或产物变化时更新本文档。算法接口、模块定义、benchmark 或复现命令变化时更新 README。
 
@@ -8,15 +8,17 @@
 
 ## 1. 当前状态
 
-当前结论是 **Conditional GO**：算法工程框架 v0 已贯通，但没有论文级效果证据。
+当前结论保持 **pending_user_discussion**。2026-08-22 已按讨论结果重建软件架构，但尚未在正式数据预算上训练新模型；旧实现的单 seed 证据不能自动转移为新架构结论。
 
 继续研究的前提是中央 code 能形成稳定行为语义，且目标决策时刻的局部历史包含足以让各 agent 一致恢复 mode 的信息。
 
-已实现的工程链路包括：无标签训练 view、中央 VQ teacher、局部 categorical aligner、置信度拒绝、mode 条件 MADiff、集中式 mode value head、场景级划分与 focal-agent 分散采样。
+新工程主线包括：`TeamModeVQVAE` 的 `K×N×D` agent-specific role codebook、同一 stage 内以 stop-gradient code 蒸馏的 `LocalModePrior`、原生 role-context `ModeTemporalUnet`，以及 observation diffusion、local inverse dynamics 与 `RTG → mode` 链式 CFG。训练与评估统一走原 MADiff 的 `run_experiment.py`、`run_scripts/train.py`、`run_scripts/evaluate.py` 和 exp specs。
 
-截至本次更新，`tests/mode_consistent` 为 `34 passed`。旧 `H=5` seed 0 证据保留为历史对照；当前 P2 已改为 VO-MASD 权重方向的 VQ 损失，且一条 `H=25` 完整 episode 只产生一个团队 code。真实 OMAR 40-episode 子集上的 VQ/no-code 2-step GPU smoke 与冻结评估已通过；全量 20 万 episode 的 H=25 正式评估尚未运行。所有结果仍标记为 `pending_user_discussion`。
+软件验证目前包括模型/数据 contract tests。2026-08-23 将训练入口重构为 stage1（VQ + local prior 联合训练）与 stage2（observation diffusion + local inverse dynamics），正式训练改为 `eval_fraction=0.0` 的全文件拟合，并新增 stage2 Simple Spread 真实 rollout/视频 evaluator；尚未运行新架构的正式训练或环境评估。
 
-P2 当前协议为 `trajectory_scope=full_episode, H=25, stride=1`。共享 GRU 先分别编码 agent 轨迹，再聚合为一个 `z_e`并查询单个 `K x D` 团队 codebook；Decoder 用该 code、局部观测和 agent identity 重建全轨迹连续动作。损失为 `reconstruction + commitment + 0.001 * codebook`。旧 H=5 checkpoint 可以显式 `standard` 语义读取，但不与 H=25 证据合并。
+正式 seed 0 预算为：stage1 对 VQ teacher 与 local prior 共同执行 10,000 optimizer updates、batch 128；stage2 对 observation diffusion 与 inverse dynamics 执行 1,000,000 optimizer updates、batch 32、gradient accumulation 2、`n_diffusion_steps=200`。两阶段统一使用 full-data `CDFNormalizer`。当前文件实际为 20 万 episode、5M 联合环境步，并非常用口径下的 100M transitions。该预算用于用户先行试训，不构成超参数冻结或阶段 GO。
+
+当前首个配置仍采用 `H=25`，但 codebook 改为 `K×N×D`，VQ 权重显式定义为 `codebook_weight=1.0`、`commitment_weight=0.25`。旧 `K×D`、`reconstruction + commitment + 0.001*codebook` 结果仅作为历史记录保留。
 
 ### 1.1 共同决策协议
 
@@ -24,14 +26,16 @@ P2 当前协议为 `trajectory_scope=full_episode, H=25, stride=1`。共享 GRU 
 
 评估入口只生成 `review_status=pending_user_discussion` 的事实报告，不自动修改 README 或本文档，也不自动启动后续阶段。
 
-| 阶段 | 当前证据 | 审计结论 |
+以下表格是 2026-08-21 旧实现的冻结证据，不是新架构的阶段结论：
+
+| 阶段 | 历史证据 | 审计结论 |
 | --- | --- | --- |
 | P0：相关性缺口 | XOR 模拟符合 `1-K^(1-N)`；公共 cue 可降低 MMR | **GO，可复现** |
 | P1：OMAR 数据 | Spread 的 5 个 collector 主要覆盖 5 个不同 assignment，collector-assignment NMI=0.939；Tag/World 只有结果代理 | **初步 GO，不是同状态反事实证据** |
-| P2：mode discovery | H=25 整轨迹、VO-MASD VQ 权重的训练/评估入口已通过 smoke；正式 seed 0 尚未运行 | **待确认预算，不自动推进 P3** |
-| P3：局部共同信息 | `LocalModeAligner` 已实现局部历史蒸馏、agreement 与 unknown | **待决策时刻可辨识性曲线** |
-| P4：条件策略 | FiLM、CFG、训练与分散采样路径已贯通 | **待完整 rollout 与负对照** |
-| P5：价值改进 | `ModeValueModel` 可拟合数据回报 | **仅 value seam，未启用优势加权** |
+| P2：mode discovery | 修正初始化后 6/6 code 活跃，但 collector NMI=0.0023、终态 assignment NMI=0.0024 | **非坍缩不等于目标 mode；结论待讨论** |
+| P3：局部共同信息 | 对当前匿名 teacher，agreement 从 prefix 1 的 0.125 增至 prefix 25 的 0.791 | **只证明 teacher 可蒸馏，不证明协调语义** |
+| P4：条件策略 | 无 attention RTG+mode 整链已训练；mode/RTG 打乱未显著恶化离线 first-action MSE | **尚无条件有效性或 rollout 证据** |
+| P5：价值改进 | 独立 value model 已移除，RTG 直接作为 diffusion 条件 | **不再作为独立阶段** |
 | P6：外部效度 | Tag/World 与 SMAC 尚未进入正式模式定义和训练 | **暂停** |
 
 测试通过只证明模块接口的软件行为。论文结论还必须具备 held-out 协议、负对照、标签权限审计、数据哈希、完整 rollout 和多 seed 统计。
@@ -95,11 +99,53 @@ VO-MASD 的 VAE 预训练最小化动作负对数似然与 VQ 距离；Grouper �
 
 - **保留**：`H` 步 observation/action 编码、离散 VQ、完整片段动作解码，以及 discovery 与下游策略分阶段冻结；
 - **不引入当前 P2**：3D subgroup 层、group-size codebooks、global-state grouper PPO、稀有 code 频率筛选和在线 MAPPO；
-- **维持当前建模假设**：所有 agent 先视为一个固定团队，使用单个 `K × D` codebook；同一 code ID 配合 agent identity 解码不同角色；
+- **维持当前建模假设**：所有 agent 先视为一个固定团队，使用单个 `K×N×D` team-role codebook；同一 code ID 为各固定 agent slot 提供不同 role 向量；
 - **未解决点**：VO-MASD 的 reconstruction/VQ 目标同样不保证 assignment 语义，不能直接修复当前 code 的运动阶段混淆；
-- **已确认最小修正**：取消同 episode 的滑动窗口独立量化，改为全轨迹唯一 code；当前只完成工程 smoke，有效性需正式证据判断。
+- **已完成设计点**：取消同 episode 的滑动窗口独立量化，改为 H=25 全轨迹唯一 code；正式 seed 0 证据见 1.5 节。
 
-正式 README 已据此更新框架和四个子模型的比较边界。原 `README copy.md` 同时混合了 VO-MASD 复现说明、未实现的 RTG/inverse-dynamics 构想和当前项目描述，已在信息归并后删除。
+正式 README 已据此更新框架和四个子模型的比较边界。原 `README copy.md` 同时混合了 VO-MASD 复现说明、未实现构想和当前项目描述，已在信息归并后删除；inverse dynamics 已于 2026-08-23 通过原 MADiff 接口重新纳入 stage2。
+
+### 1.5 OMAR Spread H=25 seed 0 修正前证据
+
+全量 20 万 episode 按 collector 分层的 70%/15%/15% split 训练；VQ 与 no-code 共用 dataset SHA-256 `00989b5e8c240c30b0a0f5239cb0aa7cdb828548820ee75f117bc803ac291ef1` 和 split SHA-256 `093f56a5d739a2f0c5d391c0e9387257f6540c93e9380d06a410903fe44f2d9d`。配置为 `H=25, K=6, beta=0.001, batch=128, 1600 updates`。
+
+| test 指标 | VQ | no-code / 负对照 |
+| --- | ---: | ---: |
+| action reconstruction MSE | 0.7420 | 0.7166 |
+| first-action MSE | 2.4883 | 2.5177 |
+| code-shuffle reconstruction MSE | 0.7420 | 不适用 |
+| active codes / hard perplexity | 1 / 1.0 | 不适用 |
+| terminal-assignment NMI | 0.0 | 数据审计 |
+| collector NMI | 0.0 | 数据审计 |
+| terminal success rate | 94.39% | 数据审计 |
+
+VQ reconstruction 比 no-code 差 3.54%；code-shuffle 几乎不改变误差。train/validation/test 均只使用 code 2，因此 first-action 的 1.17% 改善不能归因于 mode 条件。
+
+冻结 checkpoint 的额外只读审计显示：从 step 200 到 1600，4096 条 validation episode 始终全部分配到 code 2。更关键的是，用同一 seed 重建训练前初始模型时，这 4096 条 episode 已全部选择 code 2：encoder 输出范数均值仅 0.381，而六个 codebook 向量范数为 4.547--6.880，最近邻被最小范数向量支配。未被选中的 code 不获得量化梯度，后续训练无法恢复多 code 竞争。
+
+因此当时最强解释是 **codebook 初始化尺度与 hard-VQ 优化引发的先验坍缩**，而不是“OMAR 没有 mode”或“H=25 必然失败”。旧 `nn.Embedding` 沿用 PyTorch 默认正态初始化；VO-MASD 源码实际将 codebook 初始化为 `Uniform(-1/K, 1/K)`。新 `TeamModeVQVAE` 已采用该初始化，但是否解决新架构的语义问题仍需重新验证。
+
+### 1.6 修正初始化后的 OMAR 整链单 seed 证据
+
+整链诊断使用同一 20 万 episode 文件，seed 0 随机划分 17 万 train / 3 万 eval。预算为 Central 1600、Local 1600、Diffusion 3000 updates；Diffusion 使用 20 个去噪时间步和 128 条 eval episode。原始 logs 已在清理阶段删除，下表保留冻结评估摘要。
+
+| 模块 | 指标 | 结果 |
+| --- | --- | ---: |
+| Central VQ | active codes / hard perplexity | 6 / 5.9625 |
+| Central VQ | collector NMI | 0.0023 |
+| Central VQ | terminal assignment NMI | 0.0024 |
+| Local，prefix 1 | agreement / per-agent teacher accuracy | 0.1248 / 0.1791 |
+| Local，prefix 10 | agreement / per-agent teacher accuracy | 0.6063 / 0.7305 |
+| Local，prefix 25 | agreement / per-agent teacher accuracy | 0.7908 / 0.8387 |
+| Diffusion | teacher mode + hindsight RTG first-action MSE | 2.7001 |
+| Diffusion | local mode + hindsight RTG first-action MSE | 2.6986 |
+| Diffusion | shuffled mode + hindsight RTG first-action MSE | 2.6993 |
+| Diffusion | no mode + hindsight RTG first-action MSE | 2.7044 |
+| Diffusion | teacher mode + shuffled RTG first-action MSE | 2.6853 |
+
+初始化修正解决了 code usage 坍缩，但没有恢复目标 assignment/collector 语义。Local 的收敛曲线说明各 agent 能从越来越长的自身历史预测当前 teacher code；由于 teacher 本身与协调 assignment 近乎独立，这不能作为 mode matching 成功证据。Diffusion 五个条件的离线误差差异小于约 0.02，且 shuffled RTG 数值反而最低，因此当前条件通路没有被证明有效。
+
+这次评估没有 MPE 环境 rollout。hindsight RTG 使用数据轨迹的实际回报，只是离线条件诊断，不是执行时可获得的真实未来回报。上述结果不能宣称 return 提升，也不触发 H 消融、SMAC 或多 seed 扩展。
 
 ## 2. 可行性判断与研究出口
 
@@ -115,6 +161,14 @@ paired MPE 中，同一初始局部观测可对应六种 collector assignment。
 2. **诊断路线**：建立不可识别性边界、数据协议和 benchmark，说明何时任何方法都不应承诺相关多模态执行。
 
 若 P2 或 P3 阶段门失败，应停止大规模 diffusion 与 SMAC 训练，转向诊断路线。
+
+### 2.1 H 窗口与 mode 收敛假设
+
+Mode 定义为长度 `H` 的协调策略片段，而不是必须贯穿整条 episode 的常量。执行时，agent 根据各自局部历史选择未来 `H` 步的局部最优 mode；研究假设是这些选择随可观测行为积累，在执行后期趋于一致。
+
+`H=25` 是首个设计点，后续需在相同数据、训练暴露量与评估协议下对 `H` 做消融，报告 reconstruction、code usage、code-switch rate、末段 agreement、time-to-consensus、return 和 success。Simple Spread 中高价值与 mode 匹配通常耦合，但 return/success 只作为冻结评估信号，不作为 mode 监督标签。
+
+数学收敛性和收敛速率暂不作为当前模型的已证明性质。只有在 code 非坍缩、时间一致性与 return 证据均呈良性后，才开启该理论工作。
 
 ## 3. 数据审计与采集计划
 
@@ -132,9 +186,9 @@ Tag 和 World 的 first-capture agent 只属于结果代理，尚未建立稳定
 
 `artifacts/omar_mode_audit.json/.png` 是先前审计快照。当前正式 P2 evaluator 可重建 collector、return、终态 assignment、code usage 和 code-shuffle 指标；按窗口起点的额外诊断暂时只记录在本文档，若成为论文指标则需先纳入最小正式入口。
 
-当前正式入口不把 collector 当作 mode 标签。`scripts/convert_omar_mpe.py` 将五个 collector 合并为无 `true_modes` 的 `EpisodeStore`；训练只读取 observations、actions 和 mask。每个 collector 内独立完成 70%/15%/15% 划分，冻结后的 evaluator 才读取 collector、return 和终态 assignment 代理。
+当前正式入口不把 collector 当作 mode 标签。`scripts/convert_omar_mpe.py` 将五个 collector 合并为无 `true_modes` 的 `EpisodeStore`；训练只读取 observations、actions 和 mask。旧证据使用每个 collector 内 70%/15%/15% 划分；新 `ModeSequenceDataset` 使用可配置的 collector-stratified train/eval 划分，smoke 默认为 85%/15%。冻结 evaluator 才读取 collector 等审计字段。
 
-真实 OMAR Spread smoke 每个 collector 取 8 条 episode，共 40 条。转换后所有张量有限、mask 全有效、terminal 协议一致；train/validation/test 分别为每个 collector 的 6/1/1 条。H=25 VQ 与 no-code 的 2-step GPU 训练及 unlabeled comparison 已通过。VQ 在 2 steps 后只激活 1 个 code，这仅表明极小预算不能用于判定有效性，不得解读为正式 code collapse 结论。H=5 的全量历史结果见 1.3 节；H=25 全量评估尚未执行。
+真实 OMAR Spread smoke 每个 collector 取 8 条 episode，共 40 条。转换后所有张量有限、mask 全有效、terminal 协议一致；train/validation/test 分别为每个 collector 的 6/1/1 条。H=25 VQ 与 no-code 的 2-step GPU 训练及 unlabeled comparison 已通过。全量 H=25 seed 0 的正式证据见 1.5 节。
 
 ### 3.2 受控 paired Simple Spread
 
@@ -163,10 +217,10 @@ Tag 和 World 的 first-capture agent 只属于结果代理，尚未建立稳定
 | --- | --- | --- | --- |
 | P0 | XOR 的 `K,N,rho` 与 MMR | 理论和模拟一致；entropy 揭示 mode collapse | 已完成 |
 | P1 | OMAR 与 paired MPE 数据审计 | mode 与 quality 分离；明确 paired 限制 | 初审完成 |
-| P2 | H=25 整轨迹团队 mode learner | held-out collector 稳定；usage 非坍缩；code 有助于动作且对齐行为结构 | 实现与 smoke 完成，正式 seed 0 待确认 |
-| P3 | `g_i(h_i^t)` 可辨识性 | 联合报告 coverage、MMR、entropy；`t=0` 负对照正确失败 | framework v0，待实证 |
-| P4 | learned-code 条件 MADiff | learned 接近 oracle，优于 random/no-code；完成环境 rollout | train/sample 已贯通 |
-| P5 | value 或 advantage weighting | 在 P4 固定后提高 return，且不恶化 mismatch/support | weighting 未启用 |
+| P2 | H 窗口团队 mode learner | usage 非坍缩；code 有助于动作且对齐行为结构；后期一致性可测 | usage 已修复，行为语义未通过 |
+| P3 | `g_i(h_i^t)` 可辨识性 | 联合报告 coverage、MMR、entropy；`t=0` 负对照正确失败 | teacher 蒸馏曲线已跑，受 P2 语义限制 |
+| P4 | learned-code 条件 MADiff | learned 接近 oracle，优于 random/no-code；完成环境 rollout | 软件贯通；离线负对照未显示条件有效性，无 rollout |
+| P5 | RTG 引导 | 固定 mode 条件下目标 RTG 提高 return，且不恶化 mismatch/support | 已并入 P4，不再训练独立 value |
 | P6 | Tag/World、SMAC/SMACv2 | 预先定义 tactic；原始奖励；多 seed | 暂停 |
 
 停止条件：若 P2 不能在 held-out 数据上稳定恢复行为结构，或 P3 在实际决策时刻没有非平凡 coverage，则不进入大规模 P4–P6。
@@ -205,22 +259,24 @@ Tag 和 World 的 first-capture agent 只属于结果代理，尚未建立稳定
 mode_consistent/
 ├── data/
 │   ├── offline.py       # EpisodeStore 与无标签训练 view
+│   ├── sequence.py      # 标准 Trainer 窗口、划分与标签防火墙
 │   ├── mpe_modes.py     # paired Simple Spread collector
 │   └── omar_mpe.py      # OMAR adapter 与无标签 EpisodeStore 转换
 ├── models/
-│   ├── central_mode.py          # 联合轨迹 VQ teacher
-│   ├── local_context.py         # 严格局部 categorical student
-│   ├── conditional_diffusion.py # mode FiLM 与 CFG adapter
-│   └── value.py                 # 集中式 mode value head
-├── experiments/central_mode.py  # P2 整轨迹训练、checkpoint 与审计协议
-├── pipeline.py                  # 划分、标准化、训练与分散采样
-├── evaluation/metrics.py
+│   ├── team_mode_vqvae.py # K×N×D teacher 与 LocalModePrior
+│   ├── mode_temporal.py   # 无 attention、原生 role context U-Net
+│   └── mode_diffusion.py  # observation diffusion、local inverse 与链式 CFG
+├── objectives/mode_vq.py  # stage1 VQ+prior Trainer objective
+├── evaluation/
+│   ├── metrics.py
+│   ├── mode_evaluator.py
+│   └── mode_online_evaluator.py
+├── training.py            # train.py 的两阶段构造器
 ├── prototypes/xor_motivating_example.py
 └── scripts/
     ├── generate_mpe_dataset.py
     ├── convert_omar_mpe.py
-    ├── render_mpe_modes.py
-    └── run_pipeline.py
+    └── render_mpe_modes.py
 ```
 
 | 入口或产物 | 用途 | 当前状态 |
@@ -229,14 +285,16 @@ mode_consistent/
 | `scripts/generate_mpe_dataset.py` | 生成受控 paired MPE | 可复现，默认拒绝覆盖 |
 | `scripts/convert_omar_mpe.py` | 转换 OMAR 为无标签联合 episode | 可复现，collector 只用于分层与审计 |
 | `scripts/render_mpe_modes.py` | 复现并可视化固定 seed 的 assignment mode | 可复现视频、轨迹图和数值摘要 |
-| `scripts/run_pipeline.py` | 贯通 P2–P5 工程路径 | 可运行，但不是阶段隔离的正式实验 runner |
-| `run_scripts/train_mode_consistent.py` | 原 MADiff 风格的阶段训练入口 | 当前只开放 P2 central |
-| `run_scripts/evaluate_mode_consistent.py` | 加载冻结 checkpoint 并生成 evidence | 不自动给出研究结论 |
-| `exp_specs/mode_consistent/*smoke.yaml` | P2 入口级 CPU/GPU smoke | 2 steps，不是正式预算 |
+| `run_scripts/train.py` | 原 MADiff 训练入口 | 通过 `training_stage` 开放 mode_stage1、mode_stage2 |
+| `run_scripts/evaluate.py` | 原 MADiff 评估入口 | 动态加载 stage2 在线 evaluator，不自动给出研究结论 |
+| `exp_specs/mode_consistent/stage*_seed0.yaml` | OMAR H=25 两阶段正式训练 | 全文件 CDF、stage1→stage2 checkpoint 依赖已校验；尚未执行 |
+| `exp_specs/mode_consistent/eval_stage2_omar_spread_h25_seed0.yaml` | Simple Spread 真实 rollout | 10 episodes、3 个实际环境视频；尚未执行 |
 | `artifacts/omar_mode_audit.*` | 保存先前 OMAR 审计 | 静态快照；当前正式 evaluator 已另行实现无标签代理指标 |
 | `prototypes/artifacts/xor_motivating_example.*` | 保存 motivating example | 有源码入口 |
 
-`diffuser/models/diffusion.py` 只增加了 `model_kwargs` 透传、direct-action loss 初始化和完整 transition 采样维度，没有复制第二套 diffusion 实现。
+旧单体 `pipeline.py`、旧 experiments、`K×D` Central/Local/FiLM 模型和两个专用 run scripts 已删除。tracked 文件可由 Git 历史恢复；四个未跟踪旧 pipeline YAML 已由新 exp specs 取代。
+
+基础 `TemporalUnet` 仅新增默认关闭的 generic context seam；mode CFG 位于 `mode_consistent/models/mode_diffusion.py`，不改变原 `GaussianDiffusion` 的默认行为。
 
 ## 8. 已清理的研究分支
 
@@ -246,14 +304,8 @@ mode_consistent/
 
 当前保留的测试是稳定模块 contract，不是一次性实验脚本。后续新增研究 runner 时，应在阶段结论冻结后删除重复 wrapper，只保留能复现论文表格或图的最小入口。
 
-## 9. 下一阶段：P2 中央 mode discovery
+## 9. 下一次讨论门：新 VQ 的 motivating evidence
 
-当前 `run_pipeline.py` 继续只承担整链工程 smoke。P2 的独立训练与评估入口已经建立；在 P2 通过之前不扩大 diffusion 或 SMAC 预算。
+新软件闭环完成后，最小研究门仍是在受控 paired Simple Spread 上验证 `K×N×D` code 是否恢复同状态下的不同 assignment，并同时比较正确 code、shuffle 和 no-mode action reconstruction。按用户决定，OMAR H=25 seed 0 正式配置已同时开放用于试训；运行配置本身不会跨过该研究门。
 
-P2 的最小任务为：
-
-1. H=25 全轨迹单 code、VO-MASD VQ 权重、产物和标签防火墙已通过 contract test 与 GPU smoke；
-2. 与用户确认是否接受 `1600 updates, batch 128`（约 1.46 train pass）作为 OMAR H=25 seed 0 首次正式预算；
-3. 确认后只运行 VQ/no-code 和冻结 code-shuffle，生成 held-out 证据后停止并讨论；
-4. 只有 hard/soft usage、reconstruction 改善和 assignment/collector 行为对齐同时合格，才讨论 P3 冻结 teacher 蒸馏；
-5. P3 通过决策时刻的局部可辨识性阶段门后，再实现无 attention U-Net 的 RTG+mode 双条件 diffusion。
+若该最小证据不成立，应先判断 code 是否仍编码运动阶段或动作难度；若成立，再讨论正式结果、mode-first/return-first 组合和多 seed 预算。在线 rollout 入口已实现，但在 stage2 checkpoint 产生前不会生成 return 或视频；本文档不会自动改变阶段状态或启动后续实验。

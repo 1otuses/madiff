@@ -1,0 +1,17 @@
+log_dir: /mnt/disk1/users/lhh/madiff/logs/ci_codiff_mode_stage2_omar_spread_h25_seed0/mode_stage2/omar_spread_h25/seed0/0
+load_steps: [1000000]
+num_eval: 10
+overwrite: false
+condition_guidance_w: 1.2
+mode_guidance_w: 1.5
+use_ddim_sample: true
+n_ddim_steps: 15
+evaluator: mode_consistent.evaluation.ModeOnlineEvaluator
+environment: simple_spread-expert
+max_episode_steps: 25
+eval_seed: 1000
+test_ret: 0.9
+use_return_to_go: false
+num_videos: 3
+video_fps: 6
+local_confidence_threshold: 0.0

@@ -10,15 +10,19 @@
 
 ## 本地研究扩展：CI-CoDiff
 
-`mode_consistent` 以最新《蓝图思路.md》为主线，研究严格 Dec-POMDP 下的相关协调
-模态能否被分散策略实现。当前已经打通中央离散 VQ mode teacher、严格局部 categorical
-aligner、mode-conditioned MADiff、集中式 value head 与 focal-agent 分散采样的工程
-pipeline；这只证明实现路径可运行，尚未证明聚类语义、局部可辨识性或 return 提升。
-不具论文效力的手工特征、终局 probe、容量 pilot 及重复文档已从正式树中删除。
+`mode_consistent` 研究严格 Dec-POMDP 下的相关协调模态能否被分散策略实现。当前主线为
+`TeamModeVQVAE` 的 `K×N×D` 团队角色 codebook、严格局部 `LocalModePrior`，以及共享
+参数、无跨 agent attention 的 `ModeTemporalUnet + ModeGaussianDiffusion`。Return 与
+mode 使用 `RTG → mode` 链式 CFG；Diffusion 只生成局部 observation trajectory，再由
+local inverse dynamics 生成动作。训练和评估统一复用原项目入口。当前只证明新两阶段接口、
+梯度、checkpoint 与真实 MPE rollout 接口可运行，尚未执行正式训练和在线评估，也未证明
+目标 mode 语义、条件有效性或环境 return 提升。
 
 研究问题、相关工作、算法框架、benchmark 和复现命令见
 [`mode_consistent/README.md`](mode_consistent/README.md)；动态阶段状态、实验规划、脚本与证据审计见
 [`mode_consistent/RESEARCH_PROGRESS.md`](mode_consistent/RESEARCH_PROGRESS.md)。
+精确张量、损失、CFG 与 checkpoint 契约见
+[`mode_consistent/DESIGN.md`](mode_consistent/DESIGN.md)。
 
 ![MADiff](/assets/images/madiff.png)
 
