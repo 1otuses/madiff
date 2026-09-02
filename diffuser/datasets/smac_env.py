@@ -23,7 +23,7 @@ class SMAC(gym.Env):
         self.max_episode_length = self._environment.episode_limit
         self.add_agent_ids_to_obs = add_agent_ids_to_obs
 
-        if add_agent_ids_to_obs:
+        if add_agent_ids_to_obs: # 为obs增加agent_id one-hot编码
             self.one_hot_agent_ids = []
             for i in range(self.num_agents):
                 agent_id = np.eye(self.num_agents)[i]
@@ -41,15 +41,15 @@ class SMAC(gym.Env):
                 ),
             )
             for _ in range(self.num_agents)
-        ]
+        ] # obs空间
         self.action_space = [
             gym.spaces.Discrete(n=self.num_actions) for _ in range(self.num_agents)
-        ]
+        ] # action空间 离散
 
     def reset(self):
         """Resets the env."""
 
-        # Reset the environment
+        # 重置环境
         self._environment.reset()
         self._done = False
 
@@ -61,10 +61,10 @@ class SMAC(gym.Env):
     def step(self, actions: np.ndarray):
         """Steps in env."""
 
-        # Step the SMAC environment
+        # 执行环境
         reward, self._done, self._info = self._environment.step(actions)
-        reward_n = np.array([reward for _ in range(self.num_agents)])
-        done_n = np.array([self._done for _ in range(self.num_agents)])
+        reward_n = np.array([reward for _ in range(self.num_agents)]) # 共享奖励
+        done_n = np.array([self._done for _ in range(self.num_agents)]) # 共享done
 
         # Get the next observation
         next_observation = np.array(self._environment.get_obs())
@@ -72,7 +72,7 @@ class SMAC(gym.Env):
             next_observation = np.concatenate(
                 [self.one_hot_agent_ids, next_observation], axis=1
             )
-        return next_observation, reward_n, done_n, self._info
+        return next_observation, reward_n, done_n, self._info # o',r,done,info
 
     def env_done(self) -> bool:
         """Check if env is done."""
@@ -80,6 +80,7 @@ class SMAC(gym.Env):
 
     def get_legal_actions(self) -> List:
         """Get legal actions from the environment."""
+        # 合法动作
         legal_actions = []
         for i, _ in enumerate(self._agents):
             legal_actions.append(
@@ -89,6 +90,7 @@ class SMAC(gym.Env):
 
     def get_stats(self) -> Optional[Dict]:
         """Return extra stats to be logged."""
+        # 需要额外记录的信息
         return self._environment.get_stats()
 
     @property
@@ -138,15 +140,15 @@ def sequence_dataset(env, preprocess_fn):
         "smac",
         env.metadata["name"],
         env.metadata["data_split"],
-    )
+    ) # 加载数据地址
     if not os.path.exists(dataset_path):
         raise FileNotFoundError("Dataset directory not found: {}".format(dataset_path))
 
-    observations = np.load(os.path.join(dataset_path, "obs.npy"))
-    legal_actions = np.load(os.path.join(dataset_path, "legals.npy"))
-    rewards = np.load(os.path.join(dataset_path, "rewards.npy"))
-    actions = np.load(os.path.join(dataset_path, "actions.npy"))
-    path_lengths = np.load(os.path.join(dataset_path, "path_lengths.npy"))
+    observations = np.load(os.path.join(dataset_path, "obs.npy")) # 状态
+    legal_actions = np.load(os.path.join(dataset_path, "legals.npy")) # 合法动作
+    rewards = np.load(os.path.join(dataset_path, "rewards.npy")) # 奖励
+    actions = np.load(os.path.join(dataset_path, "actions.npy")) # 动作
+    path_lengths = np.load(os.path.join(dataset_path, "path_lengths.npy")) # 轨迹长度 episode
 
     start = 0
     for path_length in path_lengths:

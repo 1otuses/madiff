@@ -46,7 +46,7 @@ if __name__ == "__main__":
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
     variants_log_dir = os.path.join(
-        RUN.script_root,
+        RUN.script_root, # ~/madiff
         f"logs/variants/variants-for-{exp_specs['meta_data']['exp_name']}",
         "variants-" + timestamp,
     )

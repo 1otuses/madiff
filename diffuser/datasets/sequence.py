@@ -10,6 +10,7 @@ from diffuser.datasets.preprocessing import get_preprocess_fn
 from diffuser.utils.mask_generator import MultiAgentMaskGenerator
 
 
+# 处理数据
 class SequenceDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -31,11 +32,11 @@ class SequenceDataset(torch.utils.data.Dataset):
         include_env_ts: bool = False,
         history_horizon: int = 0,
         agent_share_parameters: bool = False,
-        use_seed_dataset: bool = False,
+        use_seed_dataset: bool = False, # 只适应OMAR_MPE的数据集
         decentralized_execution: bool = False,
         use_inv_dyn: bool = True,
         use_zero_padding: bool = True,
-        agent_condition_type: str = "single",
+        agent_condition_type: str = "single", # 是否去中心执行,不同的采样方式
         pred_future_padding: bool = False,
         seed: Optional[int] = None,
     ):
@@ -47,12 +48,12 @@ class SequenceDataset(torch.utils.data.Dataset):
         assert agent_condition_type in ["single", "all", "random"], agent_condition_type
         self.agent_condition_type = agent_condition_type
 
-        env_mod_name = {
+        env_mod_name = { # 不同环境类型,采用不同的处理方式
             "d4rl": "diffuser.datasets.d4rl",
             "mahalfcheetah": "diffuser.datasets.mahalfcheetah",
             "mamujoco": "diffuser.datasets.mamujoco",
-            "mpe": "diffuser.datasets.mpe",
-            "smac": "diffuser.datasets.smac_env",
+            "mpe": "diffuser.datasets.mpe", # o,a,r,dones合并
+            "smac": "diffuser.datasets.smac_env", # o,legals,r,a,path
             "smacv2": "diffuser.datasets.smacv2_env",
         }[env_type]
         env_mod = importlib.import_module(env_mod_name)
@@ -228,7 +229,8 @@ class SequenceDataset(torch.utils.data.Dataset):
         makes indices for sampling from dataset;
         each index maps to a datapoint
         """
-
+        # 生成用于从数据集中进行采样的索引;
+        # 每个索引对应一个数据点
         indices = []
         for i, path_length in enumerate(path_lengths):
             if self.use_padding:
@@ -244,7 +246,7 @@ class SequenceDataset(torch.utils.data.Dataset):
                 mask_end = min(end, path_length)
                 indices.append((i, start, end, mask_end))
         indices = np.array(indices)
-        return indices
+        return indices # (episode_idx, start, end, mask_end) 采样索引
 
     def get_conditions(self, observations: np.ndarray, agent_idx: Optional[int] = None):
         """
@@ -253,13 +255,13 @@ class SequenceDataset(torch.utils.data.Dataset):
 
         ret_dict = {}
         # if self.decentralized_execution:
-        if self.agent_condition_type == "single":
+        if self.agent_condition_type == "single": # DE
             cond_observations = np.zeros_like(observations[: self.history_horizon + 1])
             cond_observations[:, agent_idx] = observations[
                 : self.history_horizon + 1, agent_idx
-            ]
+            ] # 自身obs有值,其他agent置零
             ret_dict["agent_idx"] = torch.LongTensor([[agent_idx]])
-        elif self.agent_condition_type == "all":
+        elif self.agent_condition_type == "all": # CE
             cond_observations = observations[: self.history_horizon + 1]
         ret_dict[(0, self.history_horizon + 1)] = cond_observations
         return ret_dict

@@ -522,6 +522,7 @@ class MADEvaluatorWorker(Process):
         renderer = render_config()
         model = model_config()
         diffusion = diffusion_config(model)
+        trainer_config._dict["use_tensorboard"] = False
         self.trainer = trainer_config(diffusion, None, renderer)
         self.eval_tb_writer = None
         if getattr(Config, "use_tensorboard", True):

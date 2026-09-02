@@ -104,7 +104,7 @@ obs.npy: (996366, 3, 33)
 ```bash
 conda activate madiff
 python run_experiment.py \
-  -e exp_specs/smac/3m/mad_smac_3m_attn_good_history.yaml
+  -e exp_specs/smac/3m/attn_good_history.yaml
 ```
 
 不要删除历史 `.npy` 数据。新转换结果应先写入独立目录，通过统计和

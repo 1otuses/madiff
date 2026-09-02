@@ -14,7 +14,9 @@ import diffuser.utils as utils
 # -----------------------------------------------------------------------------#
 
 
+# 正弦位置编码
 class SinusoidalPosEmb(nn.Module):
+    # 编码Diffusion过程中的时间步t
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
@@ -26,30 +28,32 @@ class SinusoidalPosEmb(nn.Module):
         emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
         emb = x[..., None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
-        return emb
+        return emb # 将时间[B]编码为更高维[B, dim]
 
 
-class Downsample1d(nn.Module):
+class Downsample1d(nn.Module): # 下采样块
     def __init__(self, dim):
         super().__init__()
-        self.conv = nn.Conv1d(dim, dim, 3, 2, 1)
+        self.conv = nn.Conv1d(dim, dim, 3, 2, 1) # [B, C, H] -> [B, C, H/2]
+        # 一次下采样 视野减半
 
     def forward(self, x):
         return self.conv(x)
 
 
-class Upsample1d(nn.Module):
+class Upsample1d(nn.Module): # 上采样块
     def __init__(self, dim):
         super().__init__()
-        self.conv = nn.ConvTranspose1d(dim, dim, 4, 2, 1)
+        self.conv = nn.ConvTranspose1d(dim, dim, 4, 2, 1) # [B, C, H] -> [B, C, H*2]
+        # 一次上采样 视野加倍
 
     def forward(self, x):
         return self.conv(x)
 
 
-class Conv1dBlock(nn.Module):
+class Conv1dBlock(nn.Module): # 一维卷积块
     """
-    Conv1d --> GroupNorm --> Mish 的一维卷积块。
+    Conv1d --> GroupNorm --> Mish 的一维卷积块
     """
 
     def __init__(self, inp_channels, out_channels, kernel_size, mish=True, n_groups=8):
@@ -68,13 +72,13 @@ class Conv1dBlock(nn.Module):
             nn.GroupNorm(n_groups, out_channels),
             Rearrange("batch channels 1 horizon -> batch channels horizon"),
             act_fn,
-        )
+        ) # [B, inp_channels, H] -> [B, out_channels, H]
 
     def forward(self, x):
         return self.block(x)
 
 
-class SelfAttention(nn.Module):
+class SelfAttention(nn.Module): # 自注意力机制
     def __init__(
         self,
         n_channels: int,
@@ -119,7 +123,7 @@ class SelfAttention(nn.Module):
 
         out = rearrange(out, "h b a f -> b a (h f)")
         out = out.reshape(x.shape)
-        if self.residual:
+        if self.residual: # 残差项
             out = x + self.gamma * out
         return out
 
@@ -143,7 +147,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(X)
 
 
-class MlpSelfAttention(nn.Module):
+class MlpSelfAttention(nn.Module): # 多层感知机自注意力机制
     def __init__(self, dim_in, dim_hidden=128):
         super().__init__()
         self.query_layer = nn.Sequential(
@@ -212,6 +216,7 @@ def apply_conditioning(x, conditions):
 
 
 class WeightedLoss(nn.Module):
+    # 预测(a,o)数据对
     def __init__(self, weights, action_dim):
         super().__init__()
         self.register_buffer("weights", weights)
@@ -220,11 +225,11 @@ class WeightedLoss(nn.Module):
     def forward(self, pred, targ):
         """
         pred, targ : 张量
-            [ batch_size x horizon x transition_dim ]
+            [ batch_size x horizon x transition_dim ] transition_dim = action_dim + observation_dim
         """
         loss = self._loss(pred, targ)
         # 加权损失 = (loss * self.weights).mean()
-        if self.action_dim > 0:
+        if self.action_dim > 0: # 记录第一个时间位置的动作损失
             a0_loss = (
                 loss[:, 0, : self.action_dim] / self.weights[0, : self.action_dim]
             ).mean()
@@ -236,6 +241,7 @@ class WeightedLoss(nn.Module):
 
 
 class WeightedStateLoss(nn.Module):
+    # 只预测o数据
     def __init__(self, weights):
         super().__init__()
         self.register_buffer("weights", weights)
@@ -243,11 +249,11 @@ class WeightedStateLoss(nn.Module):
     def forward(self, pred, targ):
         """
         pred, targ : 张量
-            [ batch_size x horizon x transition_dim ]
+            [ batch_size x horizon x transition_dim ] transition_dim = observation_dim
         """
         loss = self._loss(pred, targ)
         weighted_loss = (loss * self.weights).mean()
-        return loss * self.weights, {"a0_loss": weighted_loss}
+        return loss * self.weights, {"a0_loss": weighted_loss} # 这里的a0_loss有误,应该表示整体加权loss的均值
         # return 加权损失, {"a0_loss": weighted_loss}
 
 

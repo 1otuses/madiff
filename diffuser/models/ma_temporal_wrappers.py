@@ -7,7 +7,19 @@ import torch.nn as nn
 from .temporal import TemporalUnet, TemporalValue
 
 
-class ConcatenatedTemporalUnet(nn.Module):
+class ConcatenatedTemporalUnet(nn.Module): # 拼接所有agent的时序网络
+    '''
+    将所有agent的trajectory拼接成一个joint trajectory
+    作为TemporalUnet的输入, 输出去噪后的joint trajectory
+    [B, H, N, transition]
+      ->[B, H, N * transition]
+      -> TemporalUnet 
+      -> [B, H, N * transition]
+      -> [B, H, N, transition]
+    特征: 一个网络同时预测joint trajectory
+    依赖agent的输入固定顺序,且当agent数量增加无法迁移
+    属于中心化执行,不满足DE
+    '''
     agent_share_parameters = False
 
     def __init__(
@@ -80,7 +92,12 @@ class ConcatenatedTemporalUnet(nn.Module):
         return x
 
 
-class IndependentTemporalUnet(nn.Module):
+class IndependentTemporalUnet(nn.Module): # agent独立的时序网络
+    '''
+    为每个agent分配独立的TemporalUnet网络,同样根据自身history和当前状态生成各自的轨迹
+    特征: 参数量随agents数量增加, agent之间不直接交换信息
+    适合异构agent情况
+    '''
     agent_share_parameters = False
 
     def __init__(
@@ -108,7 +125,7 @@ class IndependentTemporalUnet(nn.Module):
         self.returns_condition = returns_condition
         self.env_ts_condition = env_ts_condition
 
-        self.nets = nn.ModuleList(
+        self.nets = nn.ModuleList( # 为每个agent创建独立的TemporalUnet网络
             [
                 TemporalUnet(
                     horizon=horizon,
@@ -160,14 +177,24 @@ class IndependentTemporalUnet(nn.Module):
         return x_list
 
 
-class SharedIndependentTemporalUnet(nn.Module):
+class SharedIndependentTemporalUnet(nn.Module): # 共享参数的独立时序网络
+    '''
+    将单agent的TemporalUnet作为基础网络, wrapper成多agents
+    最基础的方法: 每个agent使用相同的模型参数,但独立处理各自的输入
+    agent 0 trajectory ─┐
+    agent 1 trajectory ─┼→ 同一个 TemporalUnet——→生成各自不同轨迹
+    agent 2 trajectory ─┘
+    特征: 参数量不随agents数量增加, agent之间不直接交换信息
+    用于同构agent, 计算量会随agent数量线性增加(因为是串行处理)
+    可以作为baseline研究
+    '''
     agent_share_parameters = True
 
     def __init__(
         self,
         n_agents: int,
         horizon: int,
-        history_horizon: int,  # 未使用
+        history_horizon: int,
         transition_dim: int,
         dim: int = 128,
         dim_mults: Tuple[int] = (1, 2, 4, 8),
@@ -175,8 +202,9 @@ class SharedIndependentTemporalUnet(nn.Module):
         env_ts_condition: bool = False,
         condition_dropout: float = 0.1,
         kernel_size: int = 5,
-        residual_attn: bool = False,  # 这里未使用
+        residual_attn: bool = False,
         max_path_length: int = 100,
+        use_temporal_attention: bool = False,
     ):
         super().__init__()
 
@@ -186,7 +214,7 @@ class SharedIndependentTemporalUnet(nn.Module):
         self.env_ts_condition = env_ts_condition
         self.history_horizon = history_horizon
 
-        self.net = TemporalUnet(
+        self.net = TemporalUnet( # 只创建一个TemporalUnet网络,所有agent共享参数
             horizon=horizon,
             history_horizon=history_horizon,
             transition_dim=transition_dim,
@@ -211,30 +239,42 @@ class SharedIndependentTemporalUnet(nn.Module):
         **kwargs,
     ):
         """
-        x : [ batch x horizon x agent x transition ]
-        returns : [batch x agent x horizon]
+        x : [B, H, N, transition]
+        returns : [B, 1, N]
         """
 
         assert x.shape[2] == self.n_agents, f"{x.shape}, {self.n_agents}"
 
-        x = einops.rearrange(x, "b t a f -> b a t f")
+        x = einops.rearrange(x, "b t a f -> b a t f") # [B, N, H, transition]
         bs = x.shape[0]
 
         x = self.net(
-            x.reshape(x.shape[0] * x.shape[1], x.shape[2], x.shape[3]),
-            time=torch.cat([time for _ in range(x.shape[1])], dim=0),
-            returns=torch.cat(
-                [returns[:, :, a_idx] for a_idx in range(self.n_agents)], dim=0
+            x.reshape(
+                x.shape[0] * x.shape[1],
+                x.shape[2],
+                x.shape[3],
+            ), 
+            # [B*N, H, transtion],暂时将N拼到B维度中,让同一个TemporalUnet网络可以分别处理每个agent的轨迹
+            # time=torch.cat([time for _ in range(x.shape[1])], dim=0), # 拼接相同的diffusion时间步
+            time=time.repeat_interleave(self.n_agents, dim=0), # [B*N, embed_dim]
+            # returns=torch.cat(
+            #     [returns[:, :, a_idx] for a_idx in range(self.n_agents)], dim=0
+            # )
+            returns=einops.rearrange(
+                returns,
+                "b r a -> (b a) r",
             )
             if returns is not None
             else None,
-            env_timestep=torch.cat([env_timestep for _ in range(x.shape[1])], dim=0)
+            # env_timestep=torch.cat([env_timestep for _ in range(x.shape[1])], dim=0) # 同diffusion时间步
+            env_timestep=env_timestep.repeat_interleave(self.n_agents, dim=0)
             if env_timestep is not None
             else None,
             use_dropout=use_dropout,
             force_dropout=force_dropout,
         )
         x = x.reshape(bs, x.shape[0] // bs, x.shape[1], x.shape[2])
+        # [B, N, H, transition] -> [B, H, N, transition]
         x = einops.rearrange(x, "b a t f -> b t a f")
         return x
 

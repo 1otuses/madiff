@@ -1,7 +1,10 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 setup(
     name="madiff",
     description="Multi-agent Diffusion Model.",
-    packages=find_packages(include=["diffuser*", "mode_consistent*"]),
+    packages=["diffuser"],
+    package_dir={
+        "diffuser": "./diffuser",
+    },
 )

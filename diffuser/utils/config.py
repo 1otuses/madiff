@@ -7,19 +7,17 @@ from ml_logger import logger
 def import_class(_class):
     if type(_class) is not str:
         return _class
-    # 'diffuser' on standard installs
+    # 'diffusion' on standard installs
     repo_name = __name__.split(".")[0]
+    # eg, 'utils'
     module_name = ".".join(_class.split(".")[:-1])
+    # eg, 'Renderer'
     class_name = _class.split(".")[-1]
-    if module_name.startswith(repo_name + ".") or module_name.startswith(
-        "mode_consistent."
-    ):
-        import_name = module_name
-    else:
-        import_name = f"{repo_name}.{module_name}"
-    module = importlib.import_module(import_name)
+    # eg, 'diffusion.utils'
+    module = importlib.import_module(f"{repo_name}.{module_name}")
+    # eg, diffusion.utils.Renderer
     _class = getattr(module, class_name)
-    print(f"[ utils/config ] Imported {import_name}:{class_name}")
+    print(f"[ utils/config ] Imported {repo_name}.{module_name}:{class_name}")
     return _class
 
 

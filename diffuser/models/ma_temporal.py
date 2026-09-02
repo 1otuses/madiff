@@ -16,8 +16,14 @@ from .temporal import (
 )
 
 
-class ConvAttentionDeconv(nn.Module):
-    # 卷积注意力去噪器
+class ConvAttentionDeconv(nn.Module): # 非共享Unet+attention
+    '''
+    独立TemporalUnet网络+attention机制
+    Agent 0 trajectory → TemporalUnet 0 Encoder ─┐
+    Agent 1 trajectory → TemporalUnet 1 Encoder ─┼→ Agent Attention → Decoder_i生成各自去噪轨迹
+    Agent 2 trajectory → TemporalUnet 2 Encoder ─┘
+    特征: 参数随agent数量线性增长,无法迁移到其他agent数量环境
+    '''
     agent_share_parameters = False
 
     def __init__(
@@ -49,7 +55,7 @@ class ConvAttentionDeconv(nn.Module):
         dims = [transition_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
 
-        self.nets = nn.ModuleList(
+        self.nets = nn.ModuleList( # 每个智能体一个TemporalUnet网络
             [
                 TemporalUnet(
                     horizon=horizon,
@@ -77,7 +83,7 @@ class ConvAttentionDeconv(nn.Module):
                     in_out[-1][1] // 16,
                     in_out[-1][1] // 4,
                     residual=residual_attn,
-                    embed_dim=self.net.embed_dim,
+                    embed_dim=self.net[0].embed_dim,
                 )
             ]
             for dims in reversed(in_out):
@@ -87,7 +93,7 @@ class ConvAttentionDeconv(nn.Module):
                         dims[1] // 16,
                         dims[1] // 4,
                         residual=residual_attn,
-                        embed_dim=self.net.embed_dim,
+                        embed_dim=self.net[0].embed_dim,
                     )
                 )
         else:
@@ -143,8 +149,10 @@ class ConvAttentionDeconv(nn.Module):
         **kwargs,
     ):
         """
-        x : [ batch x horizon x agent x transition ]
-        returns : [ batch x horizon x agent ]
+        x: [B, H, N, transition]
+        time: [B]
+        returns: [B, 1, N]
+        env_ts: [B, H]
         """
 
         assert (
@@ -152,17 +160,18 @@ class ConvAttentionDeconv(nn.Module):
         ), f"Expected {self.n_agents} agents, but got samples with shape {x.shape}"
 
         x = einops.rearrange(x, "b t a f -> b a f t")
-        x = [x[:, a_idx] for a_idx in range(x.shape[1])]  # a, b f t
-
+        # [B, H, N, transition] -> [B, N, transition, H]
+        x = [x[:, a_idx] for a_idx in range(x.shape[1])] # 拆成N个 [B, transition, H] 的列表
         t = [self.nets[i].time_mlp(time) for i in range(self.n_agents)]
-
+        # diffusion t会分别嵌入每个agent独立网络中
         if self.returns_condition:
             assert returns is not None
             returns_embed = [
                 self.nets[i].returns_mlp(returns[:, :, i]) for i in range(self.n_agents)
-            ]
+            ] # [B,D]
             if use_dropout:
-                # 这里所有智能体使用相同的 mask。
+                # 这里所有智能体公用同一个 mask
+                # 要么所有agent保留条件,要么所有agent丢弃条件
                 mask = (
                     self.nets[0]
                     .mask_dist.sample(sample_shape=(returns_embed[0].size(0), 1))
@@ -177,18 +186,20 @@ class ConvAttentionDeconv(nn.Module):
                 ]
 
             t = [torch.cat([t[i], returns_embed[i]], dim=-1) for i in range(len(t))]
+            # diffusion t与returns拼接
 
         if self.env_ts_condition:
             assert env_timestep is not None
             env_ts_embed = [
                 self.nets[i].env_ts_mlp(env_timestep) for i in range(self.n_agents)
             ]
+            # diffusion t再与env_timestep拼接
             t = [torch.cat([t[i], env_ts_embed[i]], dim=-1) for i in range(len(t))]
 
         h = [[] for _ in range(self.n_agents)]
 
         for layer_idx in range(len(self.nets[0].downs)):
-            for i in range(self.n_agents):
+            for i in range(self.n_agents): # agent独立处理
                 resnet, resnet2, downsample = self.nets[i].downs[layer_idx]
                 x[i] = resnet(x[i], t[i])
                 x[i] = resnet2(x[i], t[i])
@@ -223,12 +234,15 @@ class ConvAttentionDeconv(nn.Module):
 
         x = torch.stack(x, dim=1)
         x = einops.rearrange(x, "b a f t -> b t a f")
-
+        # [B, H, N, transition]
         return x
 
 
-class SharedConvAttentionDeconv(nn.Module):
-    # 共享卷积注意力去噪器
+class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
+    '''
+    MADiff的核心网络结构
+    在基础框架Unet基础上,增加attention机制,增加了显示 joint coordination功能
+    '''
     agent_share_parameters = True
 
     def __init__(

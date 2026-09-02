@@ -3,12 +3,13 @@ from pathlib import Path
 from typing import Union
 
 
+# 获取保存数据集的地址根目录
 DEFAULT_OFFLINE_DATA_ROOT = Path("/home/lotus/lotus/lhh/offline_datasets")
-DATASET_SOURCES = {
+DATASET_SOURCES = { # 不同数据集来源
     "mpe": "OMAR",
-    "mamujoco": "OG-MARL",
-    "smac": "OG-MARL-Vault",
-    "smacv2": "OG-MARL-Vault",
+    "mamujoco": "OG-MARL-MADiff",
+    "smac": "OG-MARL-MADiff",
+    "smacv2": "OG-MARL-MADiff",
 }
 
 

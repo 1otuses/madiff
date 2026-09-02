@@ -20,7 +20,10 @@ def cycle(dl):
 
 class EMA:
     """
-    empirical moving average
+    empirical moving average 经验移动平均
+    一种基于历史观测数据,递推计算的滑动平均算法
+    ema_{t}=beta*ema_{t-1}+(1-beta)*x_t,其中x_t是当前观测值,ema_{t-1}是上一次的平均值,beta是平滑系数(0<beta<1)
+    
     """
 
     def __init__(self, beta):
@@ -34,10 +37,10 @@ class EMA:
             old_weight, up_weight = ma_params.data, current_params.data
             ma_params.data = self.update_average(old_weight, up_weight)
 
-    def update_average(self, old, new):
+    def update_average(self, old, new): # 更新EMA
         if old is None:
             return new
-        return old * self.beta + (1 - self.beta) * new
+        return old * self.beta + (1 - self.beta) * new 
 
 
 class Trainer(object):
@@ -51,18 +54,18 @@ class Trainer(object):
         train_lr=2e-5,
         gradient_accumulate_every=2,
         step_start_ema=2000,
-        update_ema_every=10,
+        update_ema_every=10, # 更新EMA
         log_freq=100,
-        sample_freq=1000,
+        sample_freq=1000, # 采样生成图片或视频
         save_freq=1000,
         label_freq=100000,
-        eval_freq=100000,
+        eval_freq=100000, # 在线评估频率
         save_parallel=False,
         n_reference=8,
         bucket=None,
         train_device="cuda",
-        save_checkpoints=False,
-        use_tensorboard=True,  # <-- 新增参数
+        save_checkpoints=False, # 保存checkpoint
+        use_tensorboard=False,  # <-- 新增参数
         show_progress=True,
         progress_position=0,
         progress_desc="train",
@@ -119,6 +122,8 @@ class Trainer(object):
 
         self.reset_parameters()
         self.step = 0
+        self.last_saved_step = None
+        self.last_evaluated_step = None
 
         self.evaluator = None
         self.device = train_device
@@ -141,19 +146,22 @@ class Trainer(object):
     def set_evaluator(self, evaluator):
         self.evaluator = evaluator
 
-    def finish_training(self):
-        if self.step % self.save_freq == 0:
+    def finish_training(self): # 训练结束
+        if self.step % self.save_freq == 0 and self.last_saved_step != self.step: # 保存
             self.save()
-        if self.eval_freq > 0 and self.step % self.eval_freq == 0:
+        if (
+            self.eval_freq > 0
+            and self.step % self.eval_freq == 0
+            and self.last_evaluated_step != self.step
+        ): # 评估
             self.evaluate()
         if self.evaluator is not None:
             del self.evaluator
-        # 关闭 TensorBoard writer
-        if self.tb_writer is not None:
+        if self.tb_writer is not None: # 关闭 TensorBoard writer
             self.tb_writer.close()
             logger.print("[ utils/training ] TensorBoard writer closed.")
 
-    def reset_parameters(self):
+    def reset_parameters(self): # 重置参数
         self.ema_model.load_state_dict(self.model.state_dict())
 
     def step_ema(self):
@@ -167,6 +175,12 @@ class Trainer(object):
     # -----------------------------------------------------------------------------#
 
     def train(self, n_train_steps, epoch=None, total_epochs=None):
+        if self.step == 0:
+            if self.last_saved_step != self.step:
+                self.save()
+            if self.eval_freq > 0 and self.last_evaluated_step != self.step:
+                self.evaluate()
+
         timer = Timer()
         description = self.progress_desc
         if epoch is not None and total_epochs is not None:
@@ -194,6 +208,8 @@ class Trainer(object):
 
             self.optimizer.step()
             self.optimizer.zero_grad()
+
+            self.step += 1
 
             if self.step % self.update_ema_every == 0:
                 self.step_ema()
@@ -237,24 +253,30 @@ class Trainer(object):
                 else:
                     self.render_samples()
 
-            self.step += 1
+            
 
     def evaluate(self):
         assert (
             self.evaluator is not None
         ), "Method `evaluate` can not be called when `self.evaluator` is None. Set evaluator with `self.set_evaluator` first."
         self.evaluator.evaluate(load_step=self.step)
+        self.last_evaluated_step = self.step
 
     def save(self):
         """
         saves model and ema to disk;
         syncs to storage bucket if a bucket is specified
+        保存 完整网络参数权重: model 和 ema 以及 Adam优化器状态: optimizer
+        model: 当前训练GaussianDiffusion模型权重,用于反向传播训练和EMA更新
+        ema: model的指数移动平均副本模型权重,用于生成样本和评估,因为EMA模型通常比当前训练模型更稳定
+        optimizer: Adam优化器状态,用于在训练中恢复优化器状态,以便继续训练
         """
 
         data = {
             "step": self.step,
             "model": self.model.state_dict(),
             "ema": self.ema_model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
         }
         savepath = os.path.join(self.bucket, logger.prefix, "checkpoint")
         os.makedirs(savepath, exist_ok=True)
@@ -263,20 +285,29 @@ class Trainer(object):
         else:
             savepath = os.path.join(savepath, "state.pt")
         torch.save(data, savepath)
+        self.last_saved_step = self.step
         logger.print(f"[ utils/training ] Saved model to {savepath}")
 
-    def load(self):
+    def load(self, loadpath=None):
         """
         loads model and ema from disk
         """
 
-        loadpath = os.path.join(
-            self.bucket, logger.prefix, "checkpoint/state.pt")
-        data = torch.load(loadpath)
+        if loadpath is None:
+            loadpath = os.path.join(
+                self.bucket, logger.prefix, "checkpoint/state.pt")
+        data = torch.load(loadpath, map_location=self.device)
 
         self.step = data["step"]
         self.model.load_state_dict(data["model"])
         self.ema_model.load_state_dict(data["ema"])
+        if "optimizer" in data:
+            self.optimizer.load_state_dict(data["optimizer"])
+        else:
+            logger.print(
+                f"[ utils/training ] Checkpoint {loadpath} has no optimizer state; "
+                "continuing with a newly initialized optimizer."
+            )
 
     # -----------------------------------------------------------------------------#
     # --------------------------------- rendering ---------------------------------#

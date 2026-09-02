@@ -175,7 +175,7 @@ def sequence_dataset(env, preprocess_fn, seed: int = None):
         raise FileNotFoundError("Dataset directory not found: {}".format(dataset_path))
 
     if seed is None:
-        print("\n USE ALL SEED DATASET \n")
+        print("\n USE ALL SEED DATASET \n") # 将所有种子数据集都加载
         seed_dirs = os.listdir(dataset_path)
     else:
         print(f"\n USE SEED {seed} DATASET \n")
@@ -213,30 +213,28 @@ def sequence_dataset(env, preprocess_fn, seed: int = None):
                 for agent_idx in range(n_agents)
             ],
             axis=1,
-        )
-
+        ) # 合并后的obs
         actions = np.stack(
             [
                 np.load(os.path.join(seed_path, "acs_{}.npy".format(agent_idx)))
                 for agent_idx in range(n_agents)
             ],
             axis=1,
-        )
+        ) # 合并后的动作
         rewards = np.stack(
             [
                 np.load(os.path.join(seed_path, "rews_{}.npy".format(agent_idx)))
                 for agent_idx in range(n_agents)
             ],
             axis=1,
-        )
+        ) # 合并后的奖励
         dones = np.stack(
             [
                 np.load(os.path.join(seed_path, "dones_{}.npy".format(agent_idx)))
                 for agent_idx in range(n_agents)
             ],
             axis=1,
-        )
-
+        ) # 合并后的done
         data_ = collections.defaultdict(list)
         for obs, act, rew, done in zip(observations, actions, rewards, dones):
             data_["observations"].append(obs)

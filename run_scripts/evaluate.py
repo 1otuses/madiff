@@ -15,7 +15,7 @@ from diffuser.utils.launcher_util import (
 
 
 def build_eval_configs(exp_specs):
-    """兼容直接参数 yaml 和 launcher 风格 exp spec。"""
+    """兼容直接参数 yaml 和 launcher 风格 exp spec"""
     if {"meta_data", "variables", "constants"}.issubset(exp_specs.keys()):
         variant_generator = build_nested_variant_generator(exp_specs)
         return [build_config_from_dict(variant) for variant in variant_generator()]
@@ -34,7 +34,6 @@ def should_save_eval_plan_images_for_step(Config, load_step):
 def evaluate(Config):
     evaluator = None
     Config.condition_guidance_w = getattr(Config, "condition_guidance_w", None)
-    Config.mode_guidance_w = getattr(Config, "mode_guidance_w", None)
 
     for load_step in Config.load_steps:
         ckpt_file_path = os.path.join(
@@ -54,12 +53,6 @@ def evaluate(Config):
             results_file_path = results_file_path.replace(
                 ".json", f"-cg_{Config.condition_guidance_w}.json"
             )
-        if Config.mode_guidance_w is not None:
-            results_file_path = results_file_path.replace(
-                ".json", f"-mg_{Config.mode_guidance_w}.json"
-            )
-        if getattr(Config, "use_return_to_go", False):
-            results_file_path = results_file_path.replace(".json", "-rtg.json")
         if not Config.overwrite and os.path.exists(results_file_path):
             print(
                 f"Results file {results_file_path} already exist. Skipping evaluation."
@@ -74,7 +67,6 @@ def evaluate(Config):
                 num_eval=Config.num_eval,
                 num_envs=getattr(Config, "num_envs", Config.num_eval),
                 condition_guidance_w=Config.condition_guidance_w,
-                mode_guidance_w=Config.mode_guidance_w,
                 use_ddim_sample=Config.use_ddim_sample,
                 n_ddim_steps=Config.n_ddim_steps,
             )
@@ -87,16 +79,6 @@ def evaluate(Config):
                 "eval_plan_grid_cols",
                 "save_eval_plan_npz",
                 "use_tensorboard",
-                "local_prefix_eval",
-                "local_prefixes",
-                "local_confidence_threshold",
-                "environment",
-                "max_episode_steps",
-                "num_videos",
-                "video_fps",
-                "eval_seed",
-                "test_ret",
-                "use_return_to_go",
             ]:
                 if hasattr(Config, key):
                     evaluator_kwargs[key] = getattr(Config, key)

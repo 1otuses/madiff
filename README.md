@@ -6,23 +6,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2305.17330)
 
 这是 NeurIPS 2024 论文 “MADiff: Offline Multi-agent Learning with Diffusion Models”
-的官方实现。本工作区在原始 MADiff 基础上开展 CI-CoDiff 阶段性研究。
-
-## 本地研究扩展：CI-CoDiff
-
-`mode_consistent` 研究严格 Dec-POMDP 下的相关协调模态能否被分散策略实现。当前主线为
-`TeamModeVQVAE` 的 `K×N×D` 团队角色 codebook、严格局部 `LocalModePrior`，以及共享
-参数、无跨 agent attention 的 `ModeTemporalUnet + ModeGaussianDiffusion`。Return 与
-mode 使用 `RTG → mode` 链式 CFG；Diffusion 只生成局部 observation trajectory，再由
-local inverse dynamics 生成动作。训练和评估统一复用原项目入口。当前只证明新两阶段接口、
-梯度、checkpoint 与真实 MPE rollout 接口可运行，尚未执行正式训练和在线评估，也未证明
-目标 mode 语义、条件有效性或环境 return 提升。
-
-研究问题、相关工作、算法框架、benchmark 和复现命令见
-[`mode_consistent/README.md`](mode_consistent/README.md)；动态阶段状态、实验规划、脚本与证据审计见
-[`mode_consistent/RESEARCH_PROGRESS.md`](mode_consistent/RESEARCH_PROGRESS.md)。
-精确张量、损失、CFG 与 checkpoint 契约见
-[`mode_consistent/DESIGN.md`](mode_consistent/DESIGN.md)。
+的官方实现。
 
 ![MADiff](/assets/images/madiff.png)
 
@@ -176,14 +160,14 @@ pip install -e third_party/ddpg-agent
 
 ```bash
 # 多智能体粒子环境
-python run_experiment.py -e exp_specs/mpe/<task>/mad_mpe_<task>_attn_<dataset>.yaml  # CTCE
-python run_experiment.py -e exp_specs/mpe/<task>/mad_mpe_<task>_ctde_<dataset>.yaml  # CTDE
+python run_experiment.py -e exp_specs/mpe/<task>/attn_<dataset>.yaml  # CTCE
+python run_experiment.py -e exp_specs/mpe/<task>/ctde_<dataset>.yaml  # CTDE
 # MA-MuJoCo
-python run_experiment.py -e exp_specs/mamujoco/<task>/mad_mamujoco_<task>_attn_<dataset>_history.yaml  # CTCE
-python run_experiment.py -e exp_specs/mamujoco/<task>/mad_mamujoco_<task>_ctde_<dataset>_history.yaml  # CTDE
+python run_experiment.py -e exp_specs/mamujoco/<task>/attn_<dataset>_history.yaml  # CTCE
+python run_experiment.py -e exp_specs/mamujoco/<task>/ctde_<dataset>_history.yaml  # CTDE
 # SMAC
-python run_experiment.py -e exp_specs/smac/<map>/mad_smac_<map>_attn_<dataset>_history.yaml  # CTCE
-python run_experiment.py -e exp_specs/smac/<map>/mad_smac_<map>_ctde_<dataset>_history.yaml  # CTDE
+python run_experiment.py -e exp_specs/smac/<map>/attn_<dataset>_history.yaml  # CTCE
+python run_experiment.py -e exp_specs/smac/<map>/ctde_<dataset>_history.yaml  # CTDE
 ```
 
 评估前在 `exp_specs/eval_inv.yaml` 中设置待评估的 `log_dir`，然后运行：

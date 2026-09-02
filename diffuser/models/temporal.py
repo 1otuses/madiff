@@ -11,7 +11,7 @@ from torch.distributions import Bernoulli
 from .helpers import Conv1dBlock, Downsample1d, SinusoidalPosEmb, Upsample1d
 
 
-class Residual(nn.Module):
+class Residual(nn.Module): # 残差连接
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
@@ -20,7 +20,7 @@ class Residual(nn.Module):
         return self.fn(x, *args, **kwargs) + x
 
 
-class PreNorm(nn.Module):
+class PreNorm(nn.Module): # 前置归一化
     def __init__(self, dim, fn):
         super().__init__()
         self.fn = fn
@@ -31,7 +31,7 @@ class PreNorm(nn.Module):
         return self.fn(x)
 
 
-class LinearAttention(nn.Module):
+class LinearAttention(nn.Module): # 线性注意力机制
     def __init__(self, dim, heads=4, dim_head=128):
         super().__init__()
         self.heads = heads
@@ -40,10 +40,12 @@ class LinearAttention(nn.Module):
         self.to_out = nn.Conv2d(hidden_dim, dim, 1)
 
     def forward(self, x):
-        b, c, h, w = x.shape
-        qkv = self.to_qkv(x)
+        b, c, h, w = x.shape # [B, C, H, W]
+        qkv = self.to_qkv(x) # 生成Q、K、V [B, 3*hidden_dim, H, W]
         q, k, v = rearrange(
-            qkv, "b (qkv heads c) h w -> qkv b heads c (h w)", heads=self.heads, qkv=3
+            qkv, "b (qkv heads c) h w -> qkv b heads c (h w)", 
+            heads=self.heads, 
+            qkv=3
         )
         k = k.softmax(dim=-1)
         context = torch.einsum("bhdn,bhen->bhde", k, v)
@@ -54,7 +56,7 @@ class LinearAttention(nn.Module):
         return self.to_out(out)
 
 
-class TemporalSelfAttention(nn.Module):
+class TemporalSelfAttention(nn.Module): # 时序自注意力类
     def __init__(
         self,
         n_channels: int,
@@ -93,17 +95,19 @@ class TemporalSelfAttention(nn.Module):
             self.gamma = nn.Parameter(torch.zeros([1]))
 
     def forward(self, x, time):
-        x_flat = rearrange(x, "b a f t -> (b a) f t")
-        time = rearrange(time, "b a f -> (b a) f")
+        # x: [B, A, F, H]
+        # time: [B, A, embed_dim]
+        x_flat = rearrange(x, "b a f t -> (b a) f t") # [B*A, F, H]
+        time = rearrange(time, "b a f -> (b a) f") # [B*A, embed_dim]
         query, key, value = (
             self.query_layer(x_flat) + self.query_time_mlp(time),
             self.key_layer(x_flat) + self.key_time_mlp(time),
             self.value_layer(x_flat) + self.value_time_mlp(time),
-        )
+        ) # 为每个agent生成Q、K、V
 
         query = rearrange(
             query, "(b a) (h d) t -> h b a (d t)", h=self.nheads, a=x.shape[1]
-        )
+        ) # [heads, B, A, channels*H]
         key = rearrange(
             key, "(b a) (h d) t -> h b a (d t)", h=self.nheads, a=x.shape[1]
         )
@@ -113,10 +117,10 @@ class TemporalSelfAttention(nn.Module):
 
         dots = einsum(query, key, "h b a1 f, h b a2 f -> h b a1 a2") / math.sqrt(
             query.shape[-1]
-        )
-        attn = self.attend(dots)
+        ) # QK/sqrt(d_k) [heads, B, A, A]
+        attn = self.attend(dots) # softmax
         out = einsum(attn, value, "h b a1 a2, h b a2 f -> h b a1 f")
-
+        # agent会获取其他agents的轨迹信息
         out = rearrange(out, "h b a f -> b a (h f)")
         out = out.reshape(x.shape)
         if self.residual:
@@ -124,7 +128,10 @@ class TemporalSelfAttention(nn.Module):
         return out
 
 
-class TemporalMlpBlock(nn.Module):
+class TemporalMlpBlock(nn.Module): # 带时间编码的多层感知机块
+    '''
+    与ResidualTemporalBlock不同的是,ResidualTemporalBlock使用卷积学习trajectory相邻时间变化规律,而TemporalMlpBlock使用全连接层学习trajectory相邻时间变化规律
+    '''
     def __init__(self, dim_in, dim_out, embed_dim, act_fn, out_act_fn):
         super().__init__()
 
@@ -147,10 +154,9 @@ class TemporalMlpBlock(nn.Module):
 
     def forward(self, x, t):
         """
-        x : [ batch_size x inp_channels x horizon ]
-        t : [ batch_size x embed_dim ]
-        返回:
-        out : [ batch_size x out_channels x horizon ]
+        x : [ B, inp_channels, H ]
+        t : [ B, embed_dim ]
+        return out : [ B, out_channels, H ]
         """
 
         out = self.blocks[0](x) + self.time_mlp(t)
@@ -158,7 +164,12 @@ class TemporalMlpBlock(nn.Module):
         return out
 
 
-class ResidualTemporalBlock(nn.Module):
+class ResidualTemporalBlock(nn.Module): # 残差时序块
+    '''
+    用conv1学习trajectory相邻时间变化规律——局部时序规律
+    嵌入diffusion去噪时间步t
+    残差保留原始信息
+    '''
     def __init__(self, inp_channels, out_channels, embed_dim, kernel_size=5, mish=True):
         super().__init__()
 
@@ -178,30 +189,36 @@ class ResidualTemporalBlock(nn.Module):
             act_fn,
             nn.Linear(embed_dim, out_channels),
             Rearrange("batch t -> batch t 1"),
-        )
+        ) # [B, T, 1]
 
         self.residual_conv = (
             nn.Conv1d(inp_channels, out_channels, 1)
-            if inp_channels != out_channels
-            else nn.Identity()
+            if inp_channels != out_channels # 如果输入通道数不等于输出通道数
+            else nn.Identity() # 则使用1x1卷积进行通道匹配
         )
 
     def forward(self, x, t):
         """
-        x : [ batch_size x inp_channels x horizon ]
-        t : [ batch_size x embed_dim ]
-        返回:
-        out : [ batch_size x out_channels x horizon ]
+        x : [ B, inp_channels, H ]
+        t : [ B, embed_dim ]
+        return out : [ B, out_channels, H ]
         """
-
-        out = self.blocks[0](x) + self.time_mlp(t)
-        out = self.blocks[1](out)
+        # blocks中的两个conv1沿H维度一维卷积,学习trajectory相邻时间变化规律
+        # time_mlp将diffusion去噪t编码进out中
+        out = self.blocks[0](x) + self.time_mlp(t) # [B, out_channels, H] + [B, out_channels, 1]
+        out = self.blocks[1](out) # [B, out_channels, H]
 
         return out + self.residual_conv(x)
 
 
+# 核心基础U-net结构
 class TemporalUnet(nn.Module):
-    agent_share_parameters = True
+    '''
+    单agent: 将带噪的trajectory windows作为输入,输出去噪后的trajectory windows
+    input: [B, H, transition]
+    output: [B, H, transition]
+    '''
+    agent_share_parameters = True # agent共享参数
 
     def __init__(
         self,
@@ -210,11 +227,9 @@ class TemporalUnet(nn.Module):
         history_horizon: int = 0,
         dim: int = 128,
         dim_mults: Tuple[int] = (1, 2, 4, 8),
-        returns_condition: bool = False,
-        env_ts_condition: bool = False,
+        returns_condition: bool = False, # 是否使用returns条件
+        env_ts_condition: bool = False, # 是否使用环境时间步条件
         condition_dropout: float = 0.1,
-        context_dim: int = 0,
-        context_dropout: float = 0.1,
         kernel_size: int = 5,
         max_path_length: int = 100,
     ):
@@ -230,22 +245,20 @@ class TemporalUnet(nn.Module):
         self.time_dim = dim
         self.returns_dim = dim
 
-        self.time_mlp = nn.Sequential(
+        self.time_mlp = nn.Sequential( # diffusion 时间步编码
             SinusoidalPosEmb(dim),
             nn.Linear(dim, dim * 4),
             act_fn,
             nn.Linear(dim * 4, dim),
         )
-        embed_dim = dim
+        embed_dim = dim # 使模型知道当前处于Diffusion去噪的时间步t
 
         self.returns_condition = returns_condition
         self.env_ts_condition = env_ts_condition
         self.condition_dropout = condition_dropout
-        self.context_dim = context_dim
-        self.context_dropout = context_dropout
         self.history_horizon = history_horizon
 
-        if self.returns_condition:
+        if self.returns_condition: # 嵌入returns条件
             self.returns_mlp = nn.Sequential(
                 nn.Linear(1, dim),
                 act_fn,
@@ -256,7 +269,7 @@ class TemporalUnet(nn.Module):
             self.mask_dist = Bernoulli(probs=1 - self.condition_dropout)
             embed_dim += dim
 
-        if self.env_ts_condition:
+        if self.env_ts_condition: # 嵌入环境时间步条件
             self.env_ts_mlp = nn.Sequential(
                 nn.Embedding(max_path_length + 1, dim),
                 nn.Linear(dim, dim * 4),
@@ -265,32 +278,17 @@ class TemporalUnet(nn.Module):
             )
             embed_dim += dim
 
-        if self.context_dim:
-            if self.context_dim < 0:
-                raise ValueError("context_dim must be non-negative")
-            if not 0.0 <= self.context_dropout < 1.0:
-                raise ValueError("context_dropout must be in [0, 1)")
-            self.context_mlp = nn.Sequential(
-                nn.Linear(self.context_dim, dim),
-                act_fn,
-                nn.Linear(dim, dim * 4),
-                act_fn,
-                nn.Linear(dim * 4, dim),
-            )
-            self.context_mask_dist = Bernoulli(probs=1 - self.context_dropout)
-            embed_dim += dim
-
         self.embed_dim = embed_dim
 
-        self.downs = nn.ModuleList([])
-        self.ups = nn.ModuleList([])
+        self.downs = nn.ModuleList([]) # 下采样组合块
+        self.ups = nn.ModuleList([]) # 上采样组合块
         num_resolutions = len(in_out)
 
         print(in_out)
         for ind, (dim_in, dim_out) in enumerate(in_out):
             is_last = ind >= (num_resolutions - 1)
 
-            self.downs.append(
+            self.downs.append( # 时间维度压缩,特征通道dim增加;将时间维度信息压缩至特征通道处
                 nn.ModuleList(
                     [
                         ResidualTemporalBlock(
@@ -316,7 +314,7 @@ class TemporalUnet(nn.Module):
                 horizon = horizon // 2
 
         mid_dim = dims[-1]
-        self.mid_block1 = ResidualTemporalBlock(
+        self.mid_block1 = ResidualTemporalBlock( # 通道数最多,感受野最大,适合进行全局特征提取,学习trajectory全局时序规律
             mid_dim,
             mid_dim,
             embed_dim=embed_dim,
@@ -373,57 +371,34 @@ class TemporalUnet(nn.Module):
         attention_masks=None,
         use_dropout=True,
         force_dropout=False,
-        context=None,
-        use_context_dropout=True,
-        force_context_dropout=False,
     ):
         """
-        x : [ batch x horizon x transition ]
-        returns : [batch x horizon]
+        x : [ B, H, transition ]
+        returns : [B, 1]
         """
 
-        x = einops.rearrange(x, "b t f -> b f t")
+        x = einops.rearrange(x, "b t f -> b f t") # [B, transition, H]
 
-        t = self.time_mlp(time)
+        t = self.time_mlp(time) # [B, embed_dim]
 
         if self.returns_condition:
             assert returns is not None
-            returns_embed = self.returns_mlp(returns)
-            if use_dropout:
+            returns_embed = self.returns_mlp(returns) # 将returns编码成[ B, embed_dim ]
+            if use_dropout: # 按概率mask掉部分returns_embed,使模型在训练时不依赖returns条件,用于训练阶段
                 mask = self.mask_dist.sample(
                     sample_shape=(returns_embed.size(0), 1)
                 ).to(returns_embed.device)
                 returns_embed = mask * returns_embed
-            if force_dropout:
+            if force_dropout: # 强制丢弃条件,即无条件
                 returns_embed = 0 * returns_embed
-            t = torch.cat([t, returns_embed], dim=-1)
+            t = torch.cat([t, returns_embed], dim=-1) # 拼接 对应前面的embed_dim += dim
 
         if self.env_ts_condition:
             assert env_timestep is not None
             env_timestep = env_timestep.to(dtype=torch.int64)
-            env_timestep = env_timestep[:, self.history_horizon]
+            env_timestep = env_timestep[:, self.history_horizon] # 取当前时间步的环境时间步,因为前history_horizon个时间步是历史轨迹,不需要嵌入环境时间步
             env_ts_embed = self.env_ts_mlp(env_timestep)
             t = torch.cat([t, env_ts_embed], dim=-1)
-
-        if self.context_dim:
-            if context is None:
-                context_embed = torch.zeros(
-                    x.shape[0], self.time_dim, device=x.device, dtype=x.dtype
-                )
-            else:
-                if context.shape != (x.shape[0], self.context_dim):
-                    raise ValueError(
-                        "context must have shape [batch, context_dim]"
-                    )
-                context_embed = self.context_mlp(context)
-                if use_context_dropout and self.training:
-                    mask = self.context_mask_dist.sample(
-                        sample_shape=(context_embed.size(0), 1)
-                    ).to(context_embed.device)
-                    context_embed = mask * context_embed
-                if force_context_dropout:
-                    context_embed = 0 * context_embed
-            t = torch.cat([t, context_embed], dim=-1)
 
         h = []
 
@@ -437,7 +412,7 @@ class TemporalUnet(nn.Module):
         x = self.mid_block2(x, t)
 
         for resnet, resnet2, upsample in self.ups:
-            x = torch.cat((x, h.pop()), dim=1)
+            x = torch.cat((x, h.pop()), dim=1) # 取出encoder阶段的特征,与decoder阶段的特征拼接,用于恢复时间维度信息
             x = resnet(x, t)
             x = resnet2(x, t)
             x = upsample(x)
@@ -445,7 +420,7 @@ class TemporalUnet(nn.Module):
         x = self.final_conv(x)
 
         x = einops.rearrange(x, "b f t -> b t f")
-        return x
+        return x # [B, H, transition]
 
 
 class TemporalValue(nn.Module):

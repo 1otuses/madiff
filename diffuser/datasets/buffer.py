@@ -9,7 +9,6 @@ def atleast_nd(x, n: int):
         x = np.expand_dims(x, axis=-1)
     return x
 
-
 class ReplayBuffer:
     def __init__(
         self,
@@ -20,14 +19,14 @@ class ReplayBuffer:
         global_feats: List[str] = ["states"],
         use_zero_padding: bool = True,
     ):
-        # max_n_episodes: 最大episode数
-        # max_path_length: 最大路径长度
+        # max_n_episodes: 拥有的episodes数
+        # max_path_length: episodes允许的最大步数
         # termination_penalty: 终止惩罚
         # global_feats: 全局特征
         # use_zero_padding: 是否使用零填充
         self._dict = {
             "path_lengths": np.zeros(max_n_episodes, dtype=int),
-        }
+        } # path_lengths: 表示每个episode的长度
         self._count = 0
         self.n_agents = n_agents
         self.max_n_episodes = max_n_episodes
