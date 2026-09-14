@@ -18,10 +18,10 @@ from diffuser.utils.launcher_util import (
 
 def check_forward_backward(diffusion, dataset, device):
     batch = utils.batchify(dataset[0], device)
-    diffusion.zero_grad(set_to_none=True)
+    # diffusion.zero_grad(set_to_none=True)
     loss, _ = diffusion.loss(**batch)
     loss.backward()
-    diffusion.zero_grad(set_to_none=True)
+    # diffusion.zero_grad(set_to_none=True)
 
 
 def main(Config, RUN):
@@ -204,8 +204,9 @@ def main(Config, RUN):
 
     if Config.eval_freq > 0:
         evaluator = evaluator_config()
-        evaluator.init(log_dir=logger.prefix)
         trainer.set_evaluator(evaluator) # 转至evaluate状态
+        # evaluator.init(log_dir=logger.prefix)
+        evaluator.init(log_dir=os.path.join(trainer.bucket, logger.prefix))
 
     if Config.continue_training:
         loadpath = discover_latest_checkpoint_path( # 最大保存模型步数开始,从该位置开始训练

@@ -29,7 +29,7 @@ constants: # 实验变体共用固定参数
   use_zero_padding: False # 轨迹长度不足时,填充处理
   # True: 用0填充, False: 用边界重复填充
   pred_future_padding: True # 未来超出episode的padding部分计入loss
-  use_ddim_sample: True
+  use_ddim_sample: False
   n_ddim_steps: 15
 
   # model
@@ -65,19 +65,19 @@ constants: # 实验变体共用固定参数
   max_n_episodes: 50000 # 通常全部加载
   preprocess_fns: []
   use_padding: True
-  discount: 1.0
+  discount: 0.99
   max_path_length: 60 # episode最大长度
   termination_penalty: 0.0
 
   # 训练参数
   n_steps_per_epoch: 10000 # 细分每训练批次
-  n_train_steps: 200000 # 总训练步数
+  n_train_steps: 1000000 # 总训练步数
   batch_size: 32
   learning_rate: 0.0002
   gradient_accumulate_every: 2
   ema_decay: 0.995
   log_freq: 1000
-  save_freq: 10000 
+  save_freq: 100000 
   sample_freq: 0 # 训练过程中,定期trajectory渲染
   n_saves: 5
   save_parallel: False
@@ -90,7 +90,7 @@ constants: # 实验变体共用固定参数
   num_envs: 10 # 同时创建{}个环境评估
   num_eval: 100 # 每次评估总共执行{}条episodes
   # 分{}次评估,执行{}条episodes
-  eval_freq: 10000 # 评估频率
+  eval_freq: 100000 # 评估频率
 
   # load checkpoint
   continue_training: True

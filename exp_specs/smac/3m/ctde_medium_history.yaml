@@ -24,7 +24,7 @@ constants:
   decentralized_execution: True
   use_zero_padding: False
   pred_future_padding: True
-  use_ddim_sample: True
+  use_ddim_sample: False
   n_ddim_steps: 15
 
   # model
@@ -56,20 +56,20 @@ constants:
   max_n_episodes: 50000
   preprocess_fns: []
   use_padding: True
-  discount: 1.0
+  discount: 0.99
   max_path_length: 60
   termination_penalty: 0.0
 
   # training
   n_steps_per_epoch: 10000
-  n_train_steps: 200000
+  n_train_steps: 1000000
   batch_size: 32
   learning_rate: 0.0002
   gradient_accumulate_every: 2
   ema_decay: 0.995
   log_freq: 1000
-  save_freq: 10000
-  sample_freq: 0
+  save_freq: 100000
+  sample_freq: 10000
   n_saves: 5
   save_parallel: False
   n_reference: 3
@@ -80,7 +80,7 @@ constants:
   evaluator: "utils.MADEvaluator"
   num_envs: 10
   num_eval: 100
-  eval_freq: 10000
+  eval_freq: 100000
 
   # load checkpoint
   continue_training: True

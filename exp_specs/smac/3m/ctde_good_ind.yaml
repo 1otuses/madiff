@@ -25,7 +25,7 @@ constants: # 实验变体共用固定参数
   use_action: True # 数据集加载actions
   discrete_action: True # 离散动作
   residual_attn: True # 跨agent-attention时用残差
-  decentralized_execution: True # 中心化执行
+  decentralized_execution: True # 去中心化执行
   use_zero_padding: False # 轨迹长度不足时,填充处理
   # True: 用0填充, False: 用边界重复填充
   pred_future_padding: True # 未来超出episode的padding部分计入loss

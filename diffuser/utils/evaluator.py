@@ -22,6 +22,37 @@ from diffuser.utils.launcher_util import build_config_from_dict
 from diffuser.utils.mpe_plan_visualization import save_mpe_plan_visualizations
 
 
+def _reset_eval_environments(envs, episode_seeds=None):
+    if episode_seeds is not None and len(episode_seeds) != len(envs):
+        raise ValueError("episode_seeds must contain one seed per environment.")
+
+    observations = []
+    for env_idx, env in enumerate(envs):
+        if episode_seeds is not None:
+            np.random.seed(int(episode_seeds[env_idx]))
+        observations.append(env.reset())
+    return observations
+
+
+def _build_eval_metrics(episode_rewards):
+    return {
+        "average_ep_reward": np.mean(episode_rewards, axis=0),
+        "std_ep_reward": np.std(episode_rewards, axis=0),
+        "mean_ep_reward": float(np.mean(episode_rewards)),
+    }
+
+
+def _eval_tensorboard_log_dir(
+    log_dir,
+    use_ddim_sample,
+    condition_guidance_w=None,
+):
+    eval_name = "eval-ddim" if use_ddim_sample else "eval"
+    if condition_guidance_w is not None:
+        eval_name += f"-cg_{condition_guidance_w}"
+    return os.path.join(log_dir, "tensorboard", eval_name)
+
+
 class MADEvaluatorWorker(Process):
     def __init__(
         self,
@@ -151,7 +182,7 @@ class MADEvaluatorWorker(Process):
         Config = self.Config
         loadpath = os.path.join(self.log_dir, "checkpoint")
 
-        utils.set_seed(Config.seed)
+        utils.set_seed(getattr(Config, "eval_model_seed", Config.seed))
 
         if Config.save_checkpoints:
             assert load_step is not None
@@ -180,6 +211,11 @@ class MADEvaluatorWorker(Process):
 
         num_eval = Config.num_eval
         num_envs = Config.num_envs
+        eval_seeds = getattr(Config, "eval_seeds", None)
+        if eval_seeds is not None:
+            eval_seeds = list(eval_seeds)
+            if len(eval_seeds) != num_eval:
+                raise ValueError("eval_seeds must contain exactly num_eval seeds.")
 
         episode_rewards = []
         if Config.env_type == "smac" or Config.env_type == "smacv2":
@@ -197,6 +233,11 @@ class MADEvaluatorWorker(Process):
             rets = self._episodic_eval(
                 num_episodes=num_episodes,
                 capture_plan_rollouts=capture_plan_rollouts,
+                episode_seeds=(
+                    eval_seeds[cur_num_eval : cur_num_eval + num_episodes]
+                    if eval_seeds is not None
+                    else None
+                ),
             )
             episode_rewards.append(rets[1])
             if Config.env_type == "smac" or Config.env_type == "smacv2":
@@ -214,10 +255,7 @@ class MADEvaluatorWorker(Process):
         if Config.env_type == "smac" or Config.env_type == "smacv2":
             episode_wins = np.concatenate(episode_wins, axis=0)
 
-        metrics_dict = dict(
-            average_ep_reward=np.mean(episode_rewards, axis=0),
-            std_ep_reward=np.std(episode_rewards, axis=0),
-        )
+        metrics_dict = _build_eval_metrics(episode_rewards)
 
         if Config.env_type == "smac" or Config.env_type == "smacv2":
             metrics_dict["win_rate"] = np.mean(episode_wins)
@@ -235,37 +273,39 @@ class MADEvaluatorWorker(Process):
             save_file_path = save_file_path.replace(
                 ".json", f"-cg_{self.trainer.ema_model.condition_guidance_w}.json"
             )
-        logger.save_json(
-            {
+        result_dict = {
                 k: v.tolist() if isinstance(v, np.ndarray) else v
                 for k, v in metrics_dict.items()
-            },
-            save_file_path,
-        )
+        }
+        if eval_seeds is not None:
+            result_dict["eval_seeds"] = eval_seeds
+        logger.save_json(result_dict, save_file_path)
         self._write_eval_tensorboard(metrics_dict, load_step)
 
     def _write_eval_tensorboard(self, metrics_dict: dict, load_step: Optional[int]):
-        """把评估指标写入单独的 TensorBoard/evaluate 目录。"""
+        """按已有 TensorBoard schema 写入评估指标。"""
         if load_step is None or self.eval_tb_writer is None:
             return
 
         if "average_ep_reward" in metrics_dict:
             average_returns = np.asarray(metrics_dict["average_ep_reward"])
             self.eval_tb_writer.add_scalar(
-                "AverageReturns/mean",
+                "eval/mean",
                 float(average_returns.mean()),
                 load_step,
             )
-            for agent_idx, agent_return in enumerate(average_returns.reshape(-1)):
-                self.eval_tb_writer.add_scalar(
-                    f"AverageReturns/agent_{agent_idx}",
-                    float(agent_return),
-                    load_step,
-                )
+
+        if "std_ep_reward" in metrics_dict:
+            std_returns = np.asarray(metrics_dict["std_ep_reward"])
+            self.eval_tb_writer.add_scalar(
+                "eval/std",
+                float(std_returns.mean()),
+                load_step,
+            )
 
         if "win_rate" in metrics_dict:
             self.eval_tb_writer.add_scalar(
-                "Eval/win_rate",
+                "eval/win_rate",
                 float(metrics_dict["win_rate"]),
                 load_step,
             )
@@ -312,7 +352,12 @@ class MADEvaluatorWorker(Process):
         rtg = rtg / self.Config.returns_scale
         return rtg
 
-    def _episodic_eval(self, num_episodes: int, capture_plan_rollouts: bool = False):
+    def _episodic_eval(
+        self,
+        num_episodes: int,
+        capture_plan_rollouts: bool = False,
+        episode_seeds=None,
+    ):
         """Evaluate for one episode each environment."""
 
         # `num_episodes` can be smaller than total number of environment, and
@@ -342,7 +387,13 @@ class MADEvaluatorWorker(Process):
         env_ts = einops.repeat(env_ts, "t -> b t", b=num_episodes)
 
         t = 0
-        obs_list = [env.reset()[None] for env in self.env_list[:num_episodes]]
+        obs_list = [
+            observation[None]
+            for observation in _reset_eval_environments(
+                self.env_list[:num_episodes],
+                episode_seeds=episode_seeds,
+            )
+        ]
         obs = np.concatenate(obs_list, axis=0)
         recorded_obs = [deepcopy(obs[:, None])]
         recorded_plans = []
@@ -464,6 +515,7 @@ class MADEvaluatorWorker(Process):
                 "actual_observations": recorded_obs,
                 "planned_observations": np.concatenate(recorded_plans, axis=1),
                 "episode_rewards": episode_rewards,
+                "episode_seeds": episode_seeds,
             }
 
         if Config.env_type == "smac" or Config.env_type == "smacv2":
@@ -528,7 +580,13 @@ class MADEvaluatorWorker(Process):
         if getattr(Config, "use_tensorboard", True):
             from torch.utils.tensorboard import SummaryWriter
 
-            eval_tb_log_dir = os.path.join(log_dir, "tensorboard", "evaluate")
+            eval_tb_log_dir = _eval_tensorboard_log_dir(
+                log_dir,
+                Config.use_ddim_sample,
+                condition_guidance_w=(
+                    condition_guidance_w if self.rewrite_cgw else None
+                ),
+            )
             os.makedirs(eval_tb_log_dir, exist_ok=True)
             self.eval_tb_writer = SummaryWriter(log_dir=eval_tb_log_dir)
             logger.print(
@@ -614,13 +672,31 @@ class MADEvaluator:
     def evaluate(self, **kwargs):
         self.queue.put(["evaluate", kwargs])
 
+    def close(self, join_timeout: float = 5.0):
+        if getattr(self, "_closed", False):
+            return
+
+        self.queue.put(["close", None])
+        response = self.parent_remote.recv()
+        self._worker_process.join(timeout=join_timeout)
+        if self._worker_process.is_alive():
+            self._worker_process.terminate()
+            self._worker_process.join(timeout=join_timeout)
+        if self._worker_process.is_alive() and hasattr(self._worker_process, "kill"):
+            self._worker_process.kill()
+            self._worker_process.join(timeout=join_timeout)
+
+        worker_is_alive = self._worker_process.is_alive()
+        self.parent_remote.close()
+        self.queue.close()
+        self._closed = True
+        if worker_is_alive:
+            raise RuntimeError("Evaluator worker could not be terminated.")
+        if response != "closed":
+            raise RuntimeError("Evaluator worker did not close cleanly.")
+
     def __del__(self):
         try:
-            self.queue.put(["close", None])
-            # mp may be deleted so it may raise AttributeError
-            self.parent_remote.recv()
-            self._worker_process.join()
+            self.close()
         except (BrokenPipeError, EOFError, AttributeError, FileNotFoundError):
             pass
-        # ensure the subproc is terminated
-        self._worker_process.terminate()

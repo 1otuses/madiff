@@ -136,7 +136,12 @@ class Trainer(object):
         if self.use_tensorboard:
             from torch.utils.tensorboard import SummaryWriter
 
-            tb_log_dir = os.path.join(self.bucket, logger.prefix, "tensorboard")
+            tb_log_dir = os.path.join(
+                self.bucket,
+                logger.prefix,
+                "tensorboard",
+                "train",
+            )
             os.makedirs(tb_log_dir, exist_ok=True)
             self.tb_writer = SummaryWriter(log_dir=tb_log_dir)
             logger.print(f"[ utils/training ] TensorBoard logs at: {tb_log_dir}")
@@ -199,10 +204,26 @@ class Trainer(object):
         )
 
         for _ in progress:
+            tensorboard_metrics = {}
             for i in range(self.gradient_accumulate_every):
                 batch = next(self.dataloader)
                 batch = batch_to_device(batch, device=self.device)
                 loss, infos = self.model.loss(**batch)
+                if (
+                    self.tb_writer is not None
+                    and (self.step + 1) % self.log_freq == 0
+                ):
+                    requested_metrics = {
+                        "a0_loss": infos.get("a0_loss"),
+                        "inv_acc": infos.get("inv_acc"),
+                        "inv_loss": infos.get("inv_loss"),
+                        "loss": loss,
+                    }
+                    for key, value in requested_metrics.items():
+                        if value is not None:
+                            tensorboard_metrics[key] = tensorboard_metrics.get(
+                                key, 0.0
+                            ) + value.detach().item() / self.gradient_accumulate_every
                 loss = loss / self.gradient_accumulate_every
                 loss.backward()
 
@@ -238,9 +259,9 @@ class Trainer(object):
                 )
                 # --- TensorBoard ---
                 if self.tb_writer is not None:
-                    self.tb_writer.add_scalar("Loss/total", loss.detach().item(), self.step)
-                    for k, v in metrics.items():
-                        self.tb_writer.add_scalar(f"Loss/{k}", v, self.step)
+                    for key, value in tensorboard_metrics.items():
+                        self.tb_writer.add_scalar(f"train/{key}", value, self.step)
+                    self.tb_writer.flush()
 
             if self.sample_freq and self.step == 0:
                 self.render_reference(self.n_reference)

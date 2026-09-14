@@ -8,8 +8,8 @@ variables:
   seed: [100]
 
   horizon: [24]
-  returns_scale: [500]
-  dataset: ["simple_spread-medium"] 
+  returns_scale: [700]
+  dataset: ["simple_spread-expert"]
   condition_guidance_w: [1.2]
 
 constants:
@@ -20,16 +20,16 @@ constants:
   use_action: True
   discrete_action: False
   residual_attn: True
-  decentralized_execution: False
+  decentralized_execution: True
   use_zero_padding: False
   pred_future_padding: True
-  use_ddim_sample: False
+  use_ddim_sample: True
   n_ddim_steps: 15
 
   # model
-  model: "models.SharedConvAttentionDeconv"
+  model: "models.SharedIndependentTemporalUnet"
   diffusion: "models.GaussianDiffusion"
-  share_inv: True
+  share_inv: False # 采用联合逆动力学模型
   history_horizon: 0
   n_diffusion_steps: 200
   action_weight: 10
@@ -51,6 +51,7 @@ constants:
   # dataset
   loader: "datasets.SequenceDataset"
   normalizer: "CDFNormalizer"
+  # normalizer: "LimitsNormalizer"  效果很差
   max_n_episodes: 200000
   preprocess_fns: []
   use_padding: True
@@ -60,13 +61,13 @@ constants:
 
   # training
   n_steps_per_epoch: 10000
-  n_train_steps: 1001000
+  n_train_steps: 1000000
   batch_size: 32
   learning_rate: 0.0002
   gradient_accumulate_every: 2
   ema_decay: 0.995
   log_freq: 1000
-  save_freq: 50000
+  save_freq: 100000
   sample_freq: 10000
   n_saves: 5
   save_parallel: False
@@ -75,7 +76,7 @@ constants:
 
   # eval
   evaluator: "utils.MADEvaluator"
-  num_eval: 10
+  num_eval: 100
   eval_freq: 100000
 
   # load checkpoint

@@ -31,6 +31,32 @@ def should_save_eval_plan_images_for_step(Config, load_step):
     )
 
 
+def build_evaluator_kwargs(Config):
+    evaluator_kwargs = dict(
+        log_dir=Config.log_dir,
+        num_eval=Config.num_eval,
+        num_envs=getattr(Config, "num_envs", Config.num_eval),
+        condition_guidance_w=Config.condition_guidance_w,
+        use_ddim_sample=Config.use_ddim_sample,
+        n_ddim_steps=Config.n_ddim_steps,
+    )
+    for key in [
+        "eval_seeds",
+        "eval_model_seed",
+        "save_eval_plan_images",
+        "eval_plan_num_episodes",
+        "eval_plan_plot_steps",
+        "eval_plan_rollout_horizon",
+        "eval_plan_anchor_start",
+        "eval_plan_grid_cols",
+        "save_eval_plan_npz",
+        "use_tensorboard",
+    ]:
+        if hasattr(Config, key):
+            evaluator_kwargs[key] = getattr(Config, key)
+    return evaluator_kwargs
+
+
 def evaluate(Config):
     evaluator = None
     Config.condition_guidance_w = getattr(Config, "condition_guidance_w", None)
@@ -62,27 +88,7 @@ def evaluate(Config):
         if evaluator is None:
             evaluator_config = utils.Config(Config.evaluator, verbose=True)
             evaluator = evaluator_config()
-            evaluator_kwargs = dict(
-                log_dir=Config.log_dir,
-                num_eval=Config.num_eval,
-                num_envs=getattr(Config, "num_envs", Config.num_eval),
-                condition_guidance_w=Config.condition_guidance_w,
-                use_ddim_sample=Config.use_ddim_sample,
-                n_ddim_steps=Config.n_ddim_steps,
-            )
-            for key in [
-                "save_eval_plan_images",
-                "eval_plan_num_episodes",
-                "eval_plan_plot_steps",
-                "eval_plan_rollout_horizon",
-                "eval_plan_anchor_start",
-                "eval_plan_grid_cols",
-                "save_eval_plan_npz",
-                "use_tensorboard",
-            ]:
-                if hasattr(Config, key):
-                    evaluator_kwargs[key] = getattr(Config, key)
-            evaluator.init(**evaluator_kwargs)
+            evaluator.init(**build_evaluator_kwargs(Config))
 
         evaluator.evaluate(
             load_step=load_step,
@@ -91,6 +97,9 @@ def evaluate(Config):
                 load_step,
             ),
         )
+
+    if evaluator is not None:
+        evaluator.close()
 
 
 if __name__ == "__main__":

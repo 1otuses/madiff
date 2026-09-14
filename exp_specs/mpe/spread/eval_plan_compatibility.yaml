@@ -1,0 +1,32 @@
+meta_data:
+  exp_name: "eval_mpe_spread_plan_compatibility"
+  script_path: "run_scripts/evaluate.py"
+  num_workers: 1
+
+variables:
+  log_dir: [
+    # "logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_False/100",
+    # "logs/mad_mpe/simple_spread-expert/h_24-models.SharedConvAttentionDeconv-r_700-guidew_1.2-ctde_True/200",
+    "logs/mad_mpe/simple_spread-expert/h_24-models.SharedIndependentTemporalUnet-r_700-guidew_1.2-ctde_True/200",
+    
+  ]
+
+constants:
+  load_steps: [1000000]
+  num_eval: 5
+  num_envs: 5
+  eval_seeds: [100, 200, 300, 400, 500]
+  eval_model_seed: 0
+  evaluator: "utils.MADEvaluator"
+  overwrite: True
+  use_ddim_sample: True
+  n_ddim_steps: 15
+  use_tensorboard: False
+
+  save_eval_plan_images: True
+  eval_plan_num_episodes: 5
+  eval_plan_plot_steps: [0, 2, 4, 8]
+  eval_plan_rollout_horizon: 24
+  eval_plan_anchor_start: True
+  eval_plan_grid_cols: 2
+  save_eval_plan_npz: False

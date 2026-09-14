@@ -125,13 +125,19 @@ def plot_mpe_plan_rollout(
         squeeze=False,
     )
 
-    all_positions = [_mpe_agent_positions(actual_observations)]
+    all_positions = []
     for env_step in plot_steps:
         current_positions = _mpe_agent_positions(actual_observations[env_step])
+        all_positions.append(
+            _mpe_landmark_positions(actual_observations[env_step], n_agents)
+        )
         horizon = min(
             rollout_horizon,
             planned_panels.shape[2],
             actual_observations.shape[0] - env_step,
+        )
+        all_positions.append(
+            _mpe_agent_positions(actual_observations[env_step : env_step + horizon])
         )
         for panel_idx in range(n_panels):
             planned_positions = _mpe_agent_positions(
@@ -343,6 +349,7 @@ def save_mpe_plan_visualizations(
     actual_observations = plan_rollouts["actual_observations"]
     planned_observations = plan_rollouts["planned_observations"]
     episode_rewards = plan_rollouts["episode_rewards"]
+    episode_seeds = plan_rollouts.get("episode_seeds")
     episode_indices = _last_episode_indices(
         num_available=actual_observations.shape[0],
         batch_start_episode_idx=batch_start_episode_idx,
@@ -351,10 +358,13 @@ def save_mpe_plan_visualizations(
 
     saved_paths = []
     for local_idx, episode_idx in episode_indices:
+        seed_suffix = ""
+        if episode_seeds is not None:
+            seed_suffix = f"-eval_seed_{int(episode_seeds[local_idx])}"
         image_path = os.path.join(
             log_dir,
             "images",
-            f"step_{load_step}-eval_ep_{episode_idx}-mpe_spread_plans.png",
+            f"step_{load_step}-eval_ep_{episode_idx}{seed_suffix}-mpe_spread_plans.png",
         )
         plot_mpe_plan_rollout(
             actual_observations=actual_observations[local_idx],
@@ -362,7 +372,14 @@ def save_mpe_plan_visualizations(
             savepath=image_path,
             plot_steps=plot_steps,
             rollout_horizon=rollout_horizon,
-            title=f"MPE Spread eval plan | checkpoint {load_step} | episode {episode_idx}",
+            title=(
+                f"MPE Spread eval plan | checkpoint {load_step} | episode {episode_idx}"
+                + (
+                    f" | seed {int(episode_seeds[local_idx])}"
+                    if episode_seeds is not None
+                    else ""
+                )
+            ),
             returns_text=_format_returns_text(episode_rewards[local_idx]),
             anchor_plan_start=anchor_plan_start,
             grid_cols=grid_cols,
