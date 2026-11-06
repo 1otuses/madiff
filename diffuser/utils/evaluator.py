@@ -458,7 +458,7 @@ class MADEvaluatorWorker(Process):
 
             if self.discrete_action:
                 legal_action = np.stack(
-                    [env.get_legal_actions() for env in self.env_list], axis=0
+                    [env.get_legal_actions() for env in self.env_list[:num_episodes]], axis=0
                 )
                 actions[np.where(legal_action.astype(int) == 0)] = -np.inf
                 actions = np.argmax(actions, axis=-1)
@@ -476,7 +476,7 @@ class MADEvaluatorWorker(Process):
             obs_list = []
             for i in range(num_episodes):
                 if dones[i] == 1:
-                    obs_list.append(obs[i, 0][None])
+                    obs_list.append(recorded_obs[-1][i, 0][None])
                 else:
                     this_obs, this_reward, this_done, this_info = self.env_list[i].step(
                         actions[i]

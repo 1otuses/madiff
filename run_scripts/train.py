@@ -10,6 +10,7 @@ if PROJECT_ROOT not in sys.path:
 import diffuser.utils as utils
 import torch
 import yaml
+from ml_logger import logger
 from diffuser.utils.launcher_util import (
     build_config_from_dict,
     discover_latest_checkpoint_path,
@@ -24,7 +25,7 @@ def check_forward_backward(diffusion, dataset, device):
     # diffusion.zero_grad(set_to_none=True)
 
 
-def main(Config, RUN):
+def main(Config, RUN, dataset=None, prepare_only=False):
     # 禁用cudnn的benchmark模式以确保结果的可重复性
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
@@ -99,7 +100,8 @@ def main(Config, RUN):
         savepath="data_encoder_config.pkl",
     )
 
-    dataset = dataset_config()
+    if dataset is None:
+        dataset = dataset_config()
     renderer = render_config()
     data_encoder = data_encoder_config()
     observation_dim = dataset.observation_dim
@@ -109,6 +111,22 @@ def main(Config, RUN):
     # ------------------------------ model & trainer ------------------------------#
     # -----------------------------------------------------------------------------#
     # 创建模型配置对象
+    interaction_kwargs = {}
+    if Config.model == "models.SharedConvAttentionDeconv":
+        interaction_kwargs = {
+            "agent_interaction": getattr(Config, "agent_interaction", "attention"),
+            "interaction_site": getattr(Config, "interaction_site", "last_used_skip"),
+            "interaction_hidden_dim": getattr(Config, "interaction_hidden_dim", None),
+        }
+        if hasattr(Config, "attn_type"):
+            interaction_kwargs.update(
+                attn_type=Config.attn_type,
+                attn_heads=getattr(Config, "attn_heads", 4),
+                attn_cond_mode=getattr(Config, "attn_cond_mode", "film"),
+                attn_use_time_enc=getattr(Config, "attn_use_time_enc", True),
+                attn_use_ffn=getattr(Config, "attn_use_ffn", False),
+                attn_levels=getattr(Config, "attn_levels", "all"),
+            )
     model_config = utils.Config(
         Config.model,
         savepath="model_config.pkl",
@@ -125,6 +143,7 @@ def main(Config, RUN):
         max_path_length=Config.max_path_length,
         use_temporal_attention=Config.use_temporal_attention,
         device=Config.device,
+        **interaction_kwargs,
     )
     # 创建扩散模型配置对象
     diffusion_config = utils.Config(
@@ -191,7 +210,27 @@ def main(Config, RUN):
     # -----------------------------------------------------------------------------#
 
     model = model_config()
+    if interaction_kwargs:
+        Config.interaction_hidden_dim = model.interaction_hidden_dim
+        model_config._dict["interaction_hidden_dim"] = model.interaction_hidden_dim
+        logger.save_pkl(model_config, "model_config.pkl")
     diffusion = diffusion_config(model)
+    initialization_path = getattr(Config, "initialization_path", None)
+    if initialization_path is not None:
+        if not os.path.exists(initialization_path):
+            if Config.agent_interaction != "attention":
+                raise ValueError("Create the common attention initialization first.")
+            os.makedirs(os.path.dirname(os.path.abspath(initialization_path)), exist_ok=True)
+            torch.save(diffusion.state_dict(), initialization_path)
+        reference = torch.load(initialization_path, map_location="cpu")
+        current = diffusion.state_dict()
+        site_prefix = f"model.self_attn.{model.interaction_site_index}."
+        shared_keys = {key for key in current if not key.startswith(site_prefix)}
+        if shared_keys != {key for key in reference if not key.startswith(site_prefix)}:
+            raise ValueError("Common initialization differs outside the interaction site.")
+        current.update({key: reference[key] for key in shared_keys})
+        diffusion.load_state_dict(current)
+        del current, reference
     trainer = trainer_config(diffusion, dataset, renderer)
     # Trainer
     # ├── diffusion: GaussianDiffusion
@@ -227,7 +266,11 @@ def main(Config, RUN):
 
     logger.print("Testing forward...", end=" ", flush=True) # 检查前向和后向pipline是否打通
     check_forward_backward(diffusion, dataset, Config.device)
+    diffusion.zero_grad(set_to_none=True)
     logger.print("✓")
+
+    if prepare_only:
+        return trainer, dataset
 
     # -----------------------------------------------------------------------------#
     # --------------------------------- main loop ---------------------------------#

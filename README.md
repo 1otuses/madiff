@@ -8,6 +8,8 @@
 这是 NeurIPS 2024 论文 “MADiff: Offline Multi-agent Learning with Diffusion Models”
 的官方实现。
 
+本仓库自写历史方案与候选设计的版本总结见 [a_old version/](<a_old version/README.md>)。
+
 ![MADiff](/assets/images/madiff.png)
 
 ## 原始 MADiff 基准结果
@@ -174,6 +176,8 @@ python run_experiment.py -e exp_specs/smac/<map>/ctde_<dataset>_history.yaml  # 
 ```bash
 python run_experiment.py -e exp_specs/eval_inv.yaml
 ```
+
+当前实验方案见 [AgentFormer 时空注意力](agentformer_to_madiff_plan.md) 和 [非注意力信息传递替代方案](MADiff_非注意力消息传递替代方案_v1.md)。历史想法的核心记录保存在 [a_old version](<a_old version/README.md>)。
 
 ## 引用
 

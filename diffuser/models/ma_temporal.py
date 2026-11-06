@@ -3,8 +3,16 @@ from typing import Tuple
 import einops
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.distributions import Bernoulli
 
+from .agent_aware_attention import AgentAwareSpatioTemporalAttention
+from .agent_interaction import (
+    IdentityInteraction,
+    MPNNInteraction,
+    PoolInteraction,
+    matching_hidden_dim,
+)
 from .helpers import MlpSelfAttention, SelfAttention
 from .temporal import (
     Downsample1d,
@@ -241,7 +249,7 @@ class ConvAttentionDeconv(nn.Module): # 非共享Unet+attention
 class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
     '''
     MADiff的核心网络结构
-    在基础框架Unet基础上,增加attention机制,增加了显示 joint coordination功能
+    在基础框架Unet基础上,增加attention机制,实现agent之间识别 joint coordination功能
     '''
     agent_share_parameters = True
 
@@ -262,6 +270,23 @@ class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
         use_layer_norm: bool = False,
         max_path_length: int = 100,
         use_temporal_attention: bool = True,
+        agent_interaction: str = "attention", # 注意力方案
+        # "identity": 不进行agent间交互,每个agent独立去噪
+        # "pool": 对其他agent消息取均值
+        # "mpnn": 根据接收方与发送方特征计算消息,再取均值
+        interaction_site: str = "last_used_skip", # 交互位置,在最后decoder skip处进行
+        interaction_hidden_dim: int = None,
+        attn_type: str = "legacy", # agent_aware开关,默认legacy不变,为agent注意力;agent_aware为agent-time注意力
+        attn_heads: int = 4,
+        attn_cond_mode: str = "film", # 控制扩散步、回报等条件如何注入到agent注意力中
+        # film: 通过线性层将条件映射到gamma和beta,再对query进行仿射变换——加性条件注入
+        # adaln: 条件生成归一化的scale、shift和残差gate
+        # none: 不使用条件注入,仅在query中使用条件
+        attn_use_time_enc: bool = True, # 将轨迹窗口的时间编码
+        attn_use_ffn: bool = False, # 是否在agent注意力后使用前馈网络,增加非线性表达能力
+        attn_levels: str = "all",
+        # all: 替换全部注意力模块
+        # mid: 仅替换中间注意力模块,即Unet中间层的注意力模块
     ):
         super().__init__()
 
@@ -289,25 +314,42 @@ class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
             kernel_size=kernel_size,
         )
 
-        self.self_attn = [
-            TemporalSelfAttention(
-                in_out[-1][1],
-                in_out[-1][1] // 16,
-                in_out[-1][1] // 4,
+        if attn_type not in {"legacy", "agent_aware"}:
+            raise ValueError(f"Unknown attention type: {attn_type}")
+        if attn_levels not in {"all", "mid"}:
+            raise ValueError(f"Unknown attention levels: {attn_levels}")
+        if attn_type == "agent_aware" and agent_interaction != "attention":
+            raise ValueError("agent_aware requires agent_interaction='attention'")
+        self.attn_type = attn_type
+        self.attn_levels = attn_levels
+        self._attn_needs_cond = use_temporal_attention or attn_type == "agent_aware"
+        self._attention_downsamples = [len(in_out) - 1, *reversed(range(len(in_out)))]
+
+        def make_attention(channels, index):
+            if attn_type == "agent_aware" and (attn_levels == "all" or index == 0):
+                stride = 2 ** self._attention_downsamples[index]
+                return AgentAwareSpatioTemporalAttention(
+                    channels,
+                    n_agents,
+                    history_horizon=(history_horizon + stride - 1) // stride,
+                    nheads=attn_heads,
+                    cond_dim=self.net.embed_dim,
+                    cond_mode=attn_cond_mode,
+                    use_time_enc=attn_use_time_enc,
+                    use_ffn=attn_use_ffn,
+                    residual=residual_attn,
+                )
+            return TemporalSelfAttention(
+                channels,
+                channels // 16,
+                channels // 4,
                 residual=residual_attn,
                 embed_dim=self.net.embed_dim,
             )
-        ]
-        for dims in reversed(in_out):
-            self.self_attn.append(
-                TemporalSelfAttention(
-                    dims[1],
-                    dims[1] // 16,
-                    dims[1] // 4,
-                    residual=residual_attn,
-                    embed_dim=self.net.embed_dim,
-                )
-            )
+
+        self.self_attn = [make_attention(in_out[-1][1], 0)]
+        for index, dims in enumerate(reversed(in_out), start=1):
+            self.self_attn.append(make_attention(dims[1], index))
         self.self_attn = nn.ModuleList(self.self_attn)
 
         self.use_layer_norm = use_layer_norm
@@ -329,6 +371,58 @@ class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
                 horizon_ = horizon_ // 2
             self.layer_norm_cat = list(reversed(self.layer_norm_cat))
             self.layer_norm_cat = nn.ModuleList(self.layer_norm_cat)
+
+        if interaction_site != "last_used_skip":
+            raise ValueError(f"Unknown interaction site: {interaction_site}")
+        self.agent_interaction = agent_interaction
+        self.interaction_site = interaction_site
+        self.interaction_site_index = len(self.net.ups)
+        self.interaction_hidden_dim = interaction_hidden_dim
+        self.interaction_init_seed = torch.initial_seed()
+        if agent_interaction != "attention":
+            index = self.interaction_site_index
+            attention = self.self_attn[index]
+            channels = attention.query_layer.in_channels
+            embed_dim = self.net.embed_dim
+            with torch.random.fork_rng(devices=[]):
+                torch.random.default_generator.manual_seed(self.interaction_init_seed)
+                if agent_interaction == "identity":
+                    interaction = IdentityInteraction()
+                else:
+                    interaction_class = {
+                        "pool": PoolInteraction,
+                        "mpnn": MPNNInteraction,
+                    }[agent_interaction]
+                    if interaction_hidden_dim is None:
+                        interaction_hidden_dim = matching_hidden_dim(
+                            agent_interaction,
+                            channels,
+                            embed_dim,
+                            sum(p.numel() for p in attention.parameters()),
+                        )
+                    self.interaction_hidden_dim = interaction_hidden_dim
+                    interaction = interaction_class(
+                        channels, embed_dim, interaction_hidden_dim, residual_attn
+                    )
+            self.self_attn[index] = interaction
+
+    def _apply_attention(self, index, x, time, attention_masks):
+        attention = self.self_attn[index]
+        if self._attn_needs_cond:
+            time = time.reshape(x.shape[0], x.shape[1], -1)
+        if isinstance(attention, AgentAwareSpatioTemporalAttention):
+            mask = None
+            if attention_masks is not None:
+                mask = einops.rearrange(attention_masks, "b t a 1 -> b a t").to(x.dtype)
+                # 按编码器步长为 2 的采样网格缩放掩码.
+                # 下采样窗口中含有有效位置时,对应粗尺度 key 可参与注意力.
+                for _ in range(self._attention_downsamples[index]):
+                    mask = F.max_pool1d(mask, kernel_size=3, stride=2, padding=1)
+                mask = mask.bool()
+            return attention(x, time, attention_masks=mask)
+        if self._attn_needs_cond:
+            return attention(x, time)
+        return attention(x)
 
     def forward(
         self,
@@ -392,12 +486,7 @@ class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
         x = x.reshape(bs, x.shape[0] // bs, x.shape[1], x.shape[2])
         if self.use_layer_norm:
             x = self.layer_norm[0](x)
-        if self.use_temporal_attention:
-            t = t.reshape(bs, t.shape[0] // bs, t.shape[1])
-            x = self.self_attn[0](x, t)  # b a f t
-            t = t.reshape(t.shape[0] * t.shape[1], t.shape[2])
-        else:
-            x = self.self_attn[0](x)  # b a f t
+        x = self._apply_attention(0, x, t, attention_masks)
 
         x = x.reshape(x.shape[0] * x.shape[1], x.shape[2], x.shape[3])
         for layer_idx in range(len(self.net.ups)):
@@ -407,12 +496,7 @@ class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
             )
             if self.use_layer_norm:
                 hiddens = self.layer_norm[layer_idx + 1](hiddens)
-            if self.use_temporal_attention:
-                t = t.reshape(bs, t.shape[0] // bs, t.shape[1])
-                hiddens = self.self_attn[layer_idx + 1](hiddens, t)
-                t = t.reshape(t.shape[0] * t.shape[1], t.shape[2])
-            else:
-                hiddens = self.self_attn[layer_idx + 1](hiddens)
+            hiddens = self._apply_attention(layer_idx + 1, hiddens, t, attention_masks)
 
             hiddens = hiddens.reshape(
                 hiddens.shape[0] * hiddens.shape[1], hiddens.shape[2], hiddens.shape[3]

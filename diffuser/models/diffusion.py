@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch import nn
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler # DDIM采样调度器(加速采样，通常15~50步)
-from diffusers.schedulers.scheduling_consistency_models import CMStochasticIterativeScheduler  # 一致性模型调度器(单步/少步采样)
 
 
 import diffuser.utils as utils
@@ -96,7 +95,6 @@ class GaussianDiffusion(nn.Module):
             beta_schedule="squaredcos_cap_v2",
         )
         self.use_ddim_sample = False  # 是否使用DDIM采样
-        self.use_consistency_models_sample = False  # 是否使用一致性模型采样
 
         # ========== 损失函数设置 ==========
         # 获取损失权重并初始化优化目标
@@ -169,20 +167,6 @@ class GaussianDiffusion(nn.Module):
         )
         self.ddim_noise_scheduler.set_timesteps(n_ddim_steps)
         self.use_ddim_sample = True
-    
-    def set_consistency_models_scheduler(self, n_consistency_model_steps: int = 5):
-        # 设置一致性模型调度器
-        # 一致性模型调度器用于在采样过程中生成高斯噪声，以模拟数据的生成过程
-        # 该调度器通过调整噪声的方差，使模型在不同时间步长上生成的样本更符合真实数据的分布
-        # 这允许模型在生成样本时，根据噪声的方差来控制样本的随机性，从而实现更真实的样本生成
-        self.consistency_models_scheduler = CMStochasticIterativeScheduler(
-            num_train_timesteps = self.n_timesteps,
-            sigma_min = 0.002,   # 最小噪声水平
-            sigma_max = 80,      # 最大噪声水平
-            rho = 7.0            # 调度曲线形状参数
-        )
-        self.consistency_models_scheduler.set_timesteps(n_consistency_model_steps)
-        self.use_consistency_models_sample = True
 
     def get_loss_weights(self, discount: float, action_weight: Optional[float] = None):
         """
@@ -270,8 +254,6 @@ class GaussianDiffusion(nn.Module):
         device = list(cond.values())[0].device
         if self.use_ddim_sample:
             scheduler = self.ddim_noise_scheduler
-        elif self.use_consistency_models_sample:
-            scheduler = self.consistency_models_scheduler
         else:
             scheduler = self.noise_scheduler
 

@@ -107,7 +107,7 @@ class TemporalSelfAttention(nn.Module): # 时序自注意力类
 
         query = rearrange(
             query, "(b a) (h d) t -> h b a (d t)", h=self.nheads, a=x.shape[1]
-        ) # [heads, B, A, channels*H]
+        ) # [heads, B, A, channels*H] h表示多头
         key = rearrange(
             key, "(b a) (h d) t -> h b a (d t)", h=self.nheads, a=x.shape[1]
         )
