@@ -1,6 +1,7 @@
 import importlib
 import os
 import random
+from contextlib import contextmanager
 
 import numpy as np
 import torch
@@ -15,6 +16,20 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+@contextmanager
+def preserve_rng_state():
+    """让检查和可视化不改变训练使用的随机数状态。"""
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
+    devices = list(range(torch.cuda.device_count())) if torch.cuda.is_initialized() else []
+    try:
+        with torch.random.fork_rng(devices=devices):
+            yield
+    finally:
+        random.setstate(python_state)
+        np.random.set_state(numpy_state)
 
 
 def watch(args_to_watch):

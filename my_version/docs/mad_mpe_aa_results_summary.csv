@@ -1,0 +1,4 @@
+﻿dataset,environment,data_quality,checkpoint_step,training_seeds,n_seeds,legacy_mean_return,legacy_seed_sample_std,agent_aware_mean_return,agent_aware_seed_sample_std,return_change,relative_change_pct,eval_episodes_per_seed,eval_model_seed,sampler
+simple_spread-expert,Spread,Expert,1000000,"100,200,300",3,455.938750456687,22.12349531564215,502.97266469734234,7.9319774214849295,47.03391424065535,10.315840492510068,100,0,DDIM 15
+simple_tag-expert,Tag,Expert,1000000,100,1,245.8363581971344,,258.3670375792927,,12.530679382158297,5.097162793190272,100,0,DDIM 15
+simple_tag-medium-replay,Tag,Medium-Replay,1000000,100,1,97.0353189849795,,140.74698176943312,,43.71166278445362,45.047167610403726,100,0,DDIM 15

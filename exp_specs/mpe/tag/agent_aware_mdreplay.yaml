@@ -1,7 +1,9 @@
+# 功能: simple_tag-medium-replay CTDE 下, 原 MADiff 与 Agent-Aware 的对照实验.
+# 统一设置: mad_mpe_aware, seed=100/200/300, DDIM 评估, 自动检测 checkpoint 并续训.
 meta_data:
-  exp_name: "mad_mpe_aa"
+  exp_name: "mad_mpe_aware"
   script_path: "run_scripts/train.py"
-  num_workers: 1
+  num_workers: 3
   job_name: "{dataset}/h_{horizon}-{model}-{attn_type}-{attn_levels}-{attn_cond_mode}-pe_{attn_use_time_enc}-ffn_{attn_use_ffn}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
 
 variables:
@@ -18,11 +20,10 @@ constants:
   attn_use_time_enc: True
   attn_use_ffn: False
   attn_levels: "all"
-  num_envs: 5
+  num_envs: 10
   eval_model_seed: 0
 
   # misc
-  seed: 100
   env_type: "mpe"
   n_agents: 3
   use_action: True
@@ -31,7 +32,7 @@ constants:
   decentralized_execution: True
   use_zero_padding: False
   pred_future_padding: True
-  use_ddim_sample: False
+  use_ddim_sample: True
   n_ddim_steps: 15
 
   # model
@@ -83,8 +84,8 @@ constants:
 
   # eval
   evaluator: "utils.MADEvaluator"
-  num_eval: 100
+  num_eval: 10
   eval_freq: 100000
 
   # load checkpoint
-  continue_training: False
+  continue_training: True

@@ -9,6 +9,7 @@ from tqdm import tqdm
 import diffuser
 
 from .arrays import apply_dict, batch_to_device, to_device, to_np
+from .setup import preserve_rng_state
 from .timer import Timer
 
 
@@ -121,7 +122,7 @@ class Trainer(object):
         self.n_reference = n_reference
 
         self.reset_parameters()
-        self.step = 0
+        self.step = 0 # 已完成的 optimizer 更新次数
         self.last_saved_step = None
         self.last_evaluated_step = None
 
@@ -180,11 +181,14 @@ class Trainer(object):
     # -----------------------------------------------------------------------------#
 
     def train(self, n_train_steps, epoch=None, total_epochs=None):
+        self.optimizer.zero_grad(set_to_none=True)
         if self.step == 0:
             if self.last_saved_step != self.step:
                 self.save()
             if self.eval_freq > 0 and self.last_evaluated_step != self.step:
                 self.evaluate()
+            if self.sample_freq:
+                self.render_reference(self.n_reference)
 
         timer = Timer()
         description = self.progress_desc
@@ -228,7 +232,7 @@ class Trainer(object):
                 loss.backward()
 
             self.optimizer.step()
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
 
             self.step += 1
 
@@ -263,9 +267,6 @@ class Trainer(object):
                         self.tb_writer.add_scalar(f"train/{key}", value, self.step)
                     self.tb_writer.flush()
 
-            if self.sample_freq and self.step == 0:
-                self.render_reference(self.n_reference)
-
             if self.sample_freq and self.step % self.sample_freq == 0:
                 if self.model.__class__ == diffuser.models.diffusion.GaussianDiffusion:
                     self.inv_render_samples()
@@ -280,6 +281,7 @@ class Trainer(object):
         assert (
             self.evaluator is not None
         ), "Method `evaluate` can not be called when `self.evaluator` is None. Set evaluator with `self.set_evaluator` first."
+        logger.print(f"[ utils/training ] Eval requested at step {self.step}", flush=True)
         self.evaluator.evaluate(load_step=self.step)
         self.last_evaluated_step = self.step
 
@@ -334,6 +336,7 @@ class Trainer(object):
     # --------------------------------- rendering ---------------------------------#
     # -----------------------------------------------------------------------------#
 
+    @preserve_rng_state()
     def render_reference(self, batch_size=10):
         """
         renders training points
@@ -367,6 +370,7 @@ class Trainer(object):
         savepath = os.path.join("images", "sample-reference.png")
         self.renderer.composite(savepath, observations)
 
+    @preserve_rng_state()
     def render_samples(self, batch_size=2, n_samples=2):
         """
         renders samples from (ema) diffusion model
@@ -464,6 +468,7 @@ class Trainer(object):
             savepath = os.path.join("images", f"sample-{i}.png")
             self.renderer.composite(savepath, observations)
 
+    @preserve_rng_state()
     def inv_render_samples(self, batch_size=2, n_samples=2):
         """
         renders samples from (ema) diffusion model

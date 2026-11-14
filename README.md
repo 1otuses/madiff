@@ -76,78 +76,70 @@
 
 ### 安装
 
+`requirements.txt` 按 2026-11-13 的 MADiff 环境锁定 Python 包版本，
+`environment-madiff.yml` 固定 Python 3.8.20 和安装工具。以下命令在克隆后的项目根目录执行：
+
 ```bash
 sudo apt-get update
-sudo apt-get install libssl-dev libcurl4-openssl-dev swig
-conda create -n madiff python=3.8
+sudo apt-get install build-essential git libssl-dev libcurl4-openssl-dev swig libgl1 ffmpeg
+conda env create -f environment-madiff.yml
 conda activate madiff
-pip install torch==1.12.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
-pip install -r requirements.txt
+python -m pip install --no-deps -r requirements.txt
+python -m pip check
 ```
+
+快照使用 PyTorch 2.0.1+cu118、NumPy 1.22.4、Gym 0.10.8，具体版本、
+Git 依赖和验证范围见[环境迁移说明](docs/environment.md)。
+`--no-deps` 用于按完整快照安装，避免 D4RL 内部的 `mjrl@master`
+覆盖已固定的提交；快照已包含当前环境的传递依赖，安装后用 `pip check` 核对。
+PyTorch 的 CUDA 11.8 wheel 需要目标主机具有兼容的 NVIDIA 驱动。
 
 ### 配置 MPE
 
-本项目使用 [OMAR](https://github.com/ling-pan/OMAR) 的 MPE 数据。当前本机数据位于：
+MPE 和 DDPG agent 已通过 `requirements.txt` 中的相对路径安装。
+本项目使用 [OMAR](https://github.com/ling-pan/OMAR) 的 MPE 数据，
+训练数据需另行下载或复制。默认目录为：
 
 ```text
 /home/lotus/lotus/lhh/offline_datasets/OMAR/mpe
 ```
 
-安装 MPE 环境：
-
-```bash
-pip install -e third_party/multiagent-particle-envs
-pip install -e third_party/ddpg-agent
-```
+其他主机请设置 `MADIFF_OFFLINE_DATA_ROOT`，目录结构见[环境迁移说明](docs/environment.md#离线数据)。
+Tag/World 在线评估还需要对应环境的 `pretrained_adv_model.pt`。
 
 ### 配置 MA-MuJoCo
 
-1. 安装 MA-MuJoCo：
+`requirements.txt` 将 MAMujoco 固定到当前安装的上游提交。
+它与 `third_party/multiagent_mujoco` 的 Gym 约束及环境接口存在差异；
+本次锁定的是已安装包版本，MA-MuJoCo 原生编译和在线运行尚未验证。
+MuJoCo 2.1 原生库及相关系统库仍需单独准备，详见[环境迁移说明](docs/environment.md#ma-mujoco)。
 
-    ```bash
-    pip install -e third_party/multiagent_mujoco
-    ```
-
-2. MA-MuJoCo 使用 [off-the-grid MARL](https://sites.google.com/view/og-marl) 数据，并预处理为保留 episode 边界的 `.npy` 文件。
-
-    本机数据位于 `/home/lotus/lotus/lhh/offline_datasets/OG-MARL-Vault`。
-
-3. 安装 off-the-grid MARL 并转换原始数据：
-
-    ```bash
-    pip install -r ./third_party/og-marl/install_environments/requirements/mamujoco.txt
-    pip install -e ./third_party/og-marl
-    python scripts/transform_og_marl_dataset.py --env_name mamujoco --map_name <map> --quality <dataset>
-    ```
+MA-MuJoCo 使用 [off-the-grid MARL](https://sites.google.com/view/og-marl) 数据，
+训练读取转换后的 `.npy` 文件，默认位置为
+`/home/lotus/lotus/lhh/offline_datasets/OG-MARL-MADiff/mamujoco`。
 
 ### 配置 SMAC
 
-1. 运行 `scripts/smac.sh` 安装 *StarCraftII*。
+SMAC Python 包已由 `requirements.txt` 固定到当前提交。
+StarCraft II 游戏和地图需要另行安装：
 
-2. 安装 SMAC：
+```bash
+bash scripts/smac.sh
+export SC2PATH="$HOME/StarCraftII"
+```
 
-    ```bash
-    pip install git+https://github.com/oxwhirl/smac.git
-    ```
+当前主机安装的游戏目录包含 `Versions/Base75689`。
+SMAC 的转换后数据默认位于
+`/home/lotus/lotus/lhh/offline_datasets/OG-MARL-MADiff/smac/<map>/<Good|Medium|Poor>/`，
+需要单独下载或复制到目标机器。
 
-3. SMAC 使用 [off-the-grid MARL](https://sites.google.com/view/og-marl) 数据，并预处理为保留 episode 边界的 `.npy` 文件。
+### OG-MARL 数据转换
 
-    本机转换后数据位于 `/home/lotus/lotus/lhh/offline_datasets/OG-MARL-Vault/smac` 与 `smacv2`。
-
-4. 安装 off-the-grid MARL 并转换原始数据：
-
-    ```bash
-    pip install -r ./third_party/og-marl/install_environments/requirements/smacv1.txt
-    pip install -e ./third_party/og-marl
-    python scripts/transform_og_marl_dataset.py --env_name smac --map_name <map> --quality <dataset>
-    ```
-
-### 当前 OG-MARL Vault 数据
-
-当前 OG-MARL 数据使用 Flashbax Vault 格式并要求 Python 3.10。不要替换
-`third_party/og-marl`，也不要把 Flashbax 安装进 Python 3.8 的 MADiff 环境。
-请使用独立的 `environment-vault.yml` 环境和
-[`docs/vault_dataset_conversion.md`](docs/vault_dataset_conversion.md) 中的转换流程。
+MADiff 训练直接读取已经转换的 NumPy 数据，不依赖 Flashbax。
+当前 OG-MARL Vault 转换需要独立的 Python 3.10 环境，流程见
+[Vault 数据转换说明](my_version/docs/vault_dataset_conversion.md)。
+历史 TFRecord 转换入口为 `scripts/transform_og_marl_dataset.py`，
+其 TensorFlow 转换依赖也应在独立环境中准备，以保留训练环境的版本快照。
 
 ## 训练与评估
 

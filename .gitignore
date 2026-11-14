@@ -153,4 +153,47 @@ wandb/
 *.json
 __MACOSX/
 diffuser/datasets/data
-/tests
+/tests/
+
+# 本地参考仓库和临时文件
+/autoresearch/
+/trash/
+/transh/
+/tmp/
+/temp/
+/exp_specs/generated/
+
+# 训练输出和离线数据
+/results/
+/outputs/
+/checkpoint/
+/checkpoints/
+/data/
+/datasets/
+/offline_datasets/
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.bin
+*.pickle
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.zarr/
+
+# 数据和模型压缩包
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# 本地环境变量文件, 示例文件可以提交
+.env.*
+!.env.example
+!.env.template
+
+# 保留正式设计文档中的框架图
+!/my_version/*.png

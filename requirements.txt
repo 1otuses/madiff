@@ -1,31 +1,120 @@
-isort==5.12.0
+# 当前 MADiff 环境快照, 2026-11-13: Linux x86_64, Python 3.8.20.
+# 在仓库根目录安装: python -m pip install --no-deps -r requirements.txt
+# 所有已安装的直接和传递依赖均已固定; --no-deps 避免 Git 包内的浮动依赖覆盖固定版本.
+# Conda 基础环境见 environment-madiff.yml; 系统组件和安装边界见 docs/environment.md.
+# argparse 由 Python 标准库提供, 不重复安装同名回溯包.
+
+# PyTorch CUDA 11.8 wheels, 每个包单独一行.
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.0.1+cu118
+torchvision==0.15.2+cu118
+torchaudio==2.0.2+cu118
+
+# PyPI 依赖, 包括当前环境中的开发工具和全部传递依赖.
+absl-py==2.3.1
+aiofile==3.9.0
+aiofiles==24.1.0
+argcomplete==3.7.0
+atomicwrites==1.4.1
+attrs==25.3.0
 black==23.1.0
-Cython==0.29.21
-dm-control==1.0.8
+boto3==1.37.38
+botocore==1.37.38
+bracex==2.5.post1
+cachetools==4.2.4
+caio==0.9.22
+certifi==2026.6.17
+cffi==1.17.1
+charset-normalizer==3.4.7
+click==8.1.8
+cloudpickle==1.3.0
+cmake==3.25.0
+contourpy==1.1.1
+cycler==0.12.1
+Cython==3.2.8
+deepdiff==8.4.2
 diffusers==0.24.0
-einops
+dill==0.4.0
+dm-control==1.0.8
+dm-env==1.6
+dm-tree==0.1.8
+einops==0.8.1
 enum34==1.1.10
+expandvars==1.1.2
+fasteners==0.20
+filelock==3.16.1
+fonttools==4.57.0
+fsspec==2025.3.0
+functional-notations==0.5.2
+future==1.0.0
 gitdb==4.0.5
 GitPython==3.1.9
-glfw==1.12.0
-gtimer
-gym>=0.18
+glfw==2.10.0
+google-auth==1.35.0
+google-auth-oauthlib==0.4.6
+grpcio==1.70.0
+gtimer==1.0.0b5
+gym==0.10.8
+gym-notices==0.1.0
 gymnasium==0.27.1
-huggingface-hub<0.26
+gymnasium-notices==0.0.1
+h5py==3.11.0
+hf-xet==1.5.1
+html5tagger==1.3.0
+httptools==0.6.4
+huggingface-hub==0.25.2
+idna==3.15
+imageio==2.35.1
+imageio-ffmpeg==0.5.1
+importlib_metadata==8.5.0
+isort==5.12.0
+jax-jumpy==1.0.0
 jaynes==0.8.11
+Jinja2==3.1.6
+jmespath==1.0.1
 joblib==0.16.0
-matplotlib
+kiwisolver==1.4.7
+labmaze==1.0.6
+lit==15.0.7
+lxml==6.1.1
+Markdown==3.7
+MarkupSafe==2.1.5
+matplotlib==3.6.3
 ml-logger==0.8.69
+mock==5.2.0
+more-itertools==10.5.0
+mpmath==1.3.0
+mpyq==0.2.5
 mujoco==2.3.0
-mujoco-py<2.2,>=2.1
-numpy>=1.23.0,<1.24
-opencv-python
-opt-einsum==3.1.0
+mujoco-py==2.1.2.14
+multidict==6.1.0
+mypy_extensions==1.1.0
+networkx==3.1
+numpy==1.22.4
+numpy-stl==3.1.2
+oauthlib==3.3.1
+opencv-python==5.0.0.93
+opt_einsum==3.1.0
+orderly-set==5.5.0
 packaging==23.0
-pandas
+pandas==1.3.5
 params-proto==2.9.6
 path==15.0.0
-pygame
+pathspec==0.12.1
+pillow==10.4.0
+pip==24.2
+platformdirs==4.3.6
+pluggy==1.5.0
+portpicker==1.6.0
+protobuf==3.20.3
+psutil==7.2.2
+py==1.11.0
+pyasn1==0.6.3
+pyasn1_modules==0.4.2
+pybullet==3.2.7
+pycparser==2.23
+pycurl==7.45.7
+pygame==2.6.1
 pyglet==1.5.0
 PyOpenGL==3.1.5
 pyparsing==2.2.2
@@ -33,22 +122,68 @@ pyrsistent==0.16.0
 PySC2==3.0.0
 pytest==3.8.2
 python-dateutil==2.7.3
-python-utils==2.4.0
+python-utils==3.8.2
+pytz==2026.2
+PyWavelets==1.4.1
 PyYAML==6.0
+regex==2024.11.6
+requests==2.32.4
+requests-futures==1.0.2
+requests-oauthlib==2.0.0
+requests-toolbelt==1.0.0
+rsa==4.9.1
+ruamel.yaml==0.18.16
+ruamel.yaml.clib==0.2.8
+s2clientprotocol==5.0.16.97425.0
+s2protocol==5.0.16.97425.1
+s3transfer==0.11.5
+safetensors==0.5.3
+sanic==25.3.0
+Sanic-Cors==2.2.0
+sanic-routing==23.12.0
 scikit-image==0.19.3
-scipy
-seaborn
 scikit-video==1.1.11
+scipy==1.10.1
+seaborn==0.13.2
+setuptools==75.1.0
+six==1.17.0
+sk-video==1.1.10
+smmap==3.0.5
 subprocess32==3.5.4
+sympy==1.13.3
 tensorboard==2.0.2
 tensorboardX==2.0
 tensorflow-estimator==2.0.0
-tqdm
+termcolor==2.4.0
+tifffile==2023.7.10
+tomli==2.4.1
+tqdm==4.68.3
+tracerite==1.1.3
+triton==2.0.0
 typed-argument-parser==1.7.2
--e ./third_party/multiagent-particle-envs
--e ./third_party/multiagent_mujoco   # 安装MA-Mujoco
--e ./third_party/ddpg-agent
-mjrl@git+https://github.com/aravindr93/mjrl@master#egg=mjrl
-D4RL@git+https://github.com/Farama-Foundation/d4rl@e840e80ec4ed51bbb0e557e466198b5d1ae29a15
-torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+typing==3.7.4.3
+typing-inspect==0.9.0
+typing_extensions==4.13.2
+ujson==5.10.0
+urllib3==1.26.20
+uvloop==0.22.1
+waterbear==2.6.8
+wcmatch==10.0
+websocket-client==1.8.0
+websockets==13.1
+Werkzeug==3.0.6
+wheel==0.44.0
+whichcraft==0.6.1
+zipp==3.20.2
+
+# 固定上游提交; MAMujoco 保留当前已安装的上游来源.
+D4RL @ git+https://github.com/Farama-Foundation/d4rl@e840e80ec4ed51bbb0e557e466198b5d1ae29a15
+MAMujoco @ git+https://github.com/schroederdewitt/multiagent_mujoco@b212ddd74b258e7cea006ff1d642b5ffada4b99d
+mjrl @ git+https://github.com/aravindr93/mjrl@3871d93763d3b49c4741e6daeaebbc605fe140dc
+SMAC @ git+https://github.com/oxwhirl/smac.git@d6aab33f76abc3849c50463a8592a84f59a5ef84
+
+# 使用当前 clone 中的源码, 不引用旧项目提交或本机绝对路径.
 -e .
+-e ./third_party/multiagent-particle-envs
+-e ./third_party/ddpg-agent
+-e ./third_party/og-marl

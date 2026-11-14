@@ -190,7 +190,8 @@ class MADEvaluatorWorker(Process):
         else:
             loadpath = os.path.join(loadpath, "state.pt")
 
-        state_dict = torch.load(loadpath, map_location=Config.device)
+        # 在 CPU 读取 checkpoint, 避免评估时优化器状态和权重副本占用显存。
+        state_dict = torch.load(loadpath, map_location="cpu")
         state_dict["model"] = {
             k: v
             for k, v in state_dict["model"].items()
@@ -205,6 +206,7 @@ class MADEvaluatorWorker(Process):
         self.trainer.step = state_dict["step"]
         self.trainer.model.load_state_dict(state_dict["model"])
         self.trainer.ema_model.load_state_dict(state_dict["ema"])
+        del state_dict
 
         if save_eval_plan_images is None:
             save_eval_plan_images = getattr(Config, "save_eval_plan_images", False)

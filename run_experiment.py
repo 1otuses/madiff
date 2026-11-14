@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     # 创建时间戳和日志目录
     now = datetime.datetime.now(dateutil.tz.tzlocal())
-    timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
+    timestamp = now.strftime("%Y_%m_%d_%H_%M_%S_%f")
     variants_log_dir = os.path.join(
         RUN.script_root, # ~/madiff
         f"logs/variants/variants-for-{exp_specs['meta_data']['exp_name']}",
@@ -74,6 +74,7 @@ if __name__ == "__main__":
     # 并行运行实验进程，维护一个运行中的进程列表
     running_processes = []
     args_idx = 0
+    failed_variants = 0
 
     # 构建运行命令模板
     command = "python {script_path} -e {specs} -g {gpuid}"
@@ -113,6 +114,8 @@ if __name__ == "__main__":
                 new_running_processes.append(p)
             else:
                 print(f"[进程完成] PID: {p.pid}, 返回码: {ret_code}")
+                if ret_code != 0:
+                    failed_variants += 1
         running_processes = new_running_processes
         
         # 如果有进程完成，显示当前状态
@@ -120,3 +123,5 @@ if __name__ == "__main__":
             completed = args_idx - len(running_processes)
             print(f"  → 进度: {completed}/{num_variants} 完成, {len(running_processes)} 运行中")
             print(f"  → 剩余待启动: {num_variants - args_idx}\n")
+
+    raise SystemExit(1 if failed_variants else 0)

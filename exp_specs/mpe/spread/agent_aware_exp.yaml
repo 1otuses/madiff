@@ -1,14 +1,19 @@
+# 功能: Spread-expert CTDE 下, 原 MADiff 与 Agent-Aware 的正式对照实验.
+# 修改点: 使用已修复的梯度清理, step/EMA 更新顺序和预检查/可视化随机数隔离.
+# 模型: legacy / agent_aware; all 尺度, film 条件, 开启时间编码, 关闭 FFN.
+# 预算: seed=100/200/300, 每组 1M steps; 每 100k steps 评估 10 回合, eval_model_seed=0.
+# 输出: logs/mad_mpe_aware/; 自动检测 checkpoint 并续训, 历史 trainfix 结果保留在原目录.
 meta_data:
-  exp_name: "mad_mpe_aa"
+  exp_name: "mad_mpe_aware"
   script_path: "run_scripts/train.py"
-  num_workers: 1
+  num_workers: 3
   job_name: "{dataset}/h_{horizon}-{model}-{attn_type}-{attn_levels}-{attn_cond_mode}-pe_{attn_use_time_enc}-ffn_{attn_use_ffn}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
 
 variables:
   attn_type: ["legacy", "agent_aware"]
   # legacy: 原MADiff设计的attention框架
   # agent_aware: 现设计的agent-aware attention框架，能更好地处理多智能体的交互信息
-  seed: [100]
+  seed: [100, 200, 300]
 
   horizon: [24]
   returns_scale: [700]
@@ -21,11 +26,10 @@ constants:
   attn_use_time_enc: True
   attn_use_ffn: False
   attn_levels: "all"
-  num_envs: 5
+  num_envs: 10
   eval_model_seed: 0
 
   # misc
-  seed: 100
   env_type: "mpe"
   n_agents: 3
   use_action: True
@@ -87,8 +91,8 @@ constants:
 
   # eval
   evaluator: "utils.MADEvaluator"
-  num_eval: 100
+  num_eval: 10
   eval_freq: 100000
 
   # load checkpoint
-  continue_training: False
+  continue_training: True

@@ -17,12 +17,15 @@ from diffuser.utils.launcher_util import (
 )
 
 
+@utils.preserve_rng_state()
 def check_forward_backward(diffusion, dataset, device):
-    batch = utils.batchify(dataset[0], device)
-    # diffusion.zero_grad(set_to_none=True)
-    loss, _ = diffusion.loss(**batch)
-    loss.backward()
-    # diffusion.zero_grad(set_to_none=True)
+    diffusion.zero_grad(set_to_none=True)
+    try:
+        batch = utils.batchify(dataset[0], device)
+        loss, _ = diffusion.loss(**batch)
+        loss.backward()
+    finally:
+        diffusion.zero_grad(set_to_none=True)
 
 
 def main(Config, RUN, dataset=None, prepare_only=False):
@@ -266,7 +269,6 @@ def main(Config, RUN, dataset=None, prepare_only=False):
 
     logger.print("Testing forward...", end=" ", flush=True) # 检查前向和后向pipline是否打通
     check_forward_backward(diffusion, dataset, Config.device)
-    diffusion.zero_grad(set_to_none=True)
     logger.print("✓")
 
     if prepare_only:

@@ -1,5 +1,5 @@
 meta_data:
-  exp_name: "mad_mpe_aa"
+  exp_name: "mad_mpe_aware"
   script_path: "run_scripts/train.py"
   num_workers: 1
   job_name: "{dataset}/h_{horizon}-{model}-{attn_type}-{attn_levels}-{attn_cond_mode}-pe_{attn_use_time_enc}-ffn_{attn_use_ffn}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
