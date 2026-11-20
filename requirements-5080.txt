@@ -1,0 +1,169 @@
+# RTX 5080 / Python 3.10 migration candidate; not a validated environment lock.
+# First install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 from cu128.
+# This file preserves the legacy application snapshot, but leaves the PyTorch
+# dependency stack and packaging tools to their own installers.
+# Install from repository root with: python -m pip install --no-deps -r requirements-5080.txt
+# Then run: python -m pip check
+# Native simulator prerequisites and legacy API compatibility still require validation.
+# Backports below satisfy unconditional dependencies of legacy packages.
+# Python 3.10 must continue importing enum/typing/argparse from the standard library.
+enum34==1.1.10
+typing==3.7.4.3
+argparse==1.4.0
+absl-py==2.3.1
+aiofile==3.9.0
+aiofiles==24.1.0
+argcomplete==3.7.0
+atomicwrites==1.4.1
+attrs==25.3.0
+black==23.1.0
+boto3==1.37.38
+botocore==1.37.38
+bracex==2.5.post1
+cachetools==4.2.4
+caio==0.9.22
+certifi==2026.6.17
+cffi==1.17.1
+charset-normalizer==3.4.7
+click==8.1.8
+cloudpickle==1.3.0
+cmake==3.25.0
+contourpy==1.1.1
+cycler==0.12.1
+Cython==3.2.8
+deepdiff==8.4.2
+diffusers==0.24.0
+dill==0.4.0
+dm-control==1.0.8
+dm-env==1.6
+dm-tree==0.1.8
+einops==0.8.1
+expandvars==1.1.2
+fasteners==0.20
+fonttools==4.57.0
+functional-notations==0.5.2
+future==1.0.0
+gitdb==4.0.5
+GitPython==3.1.9
+glfw==2.10.0
+google-auth==1.35.0
+google-auth-oauthlib==0.4.6
+grpcio==1.70.0
+gtimer==1.0.0b5
+gym==0.10.8
+gym-notices==0.1.0
+gymnasium==0.27.1
+gymnasium-notices==0.0.1
+h5py==3.11.0
+hf-xet==1.5.1
+html5tagger==1.3.0
+httptools==0.6.4
+huggingface-hub==0.25.2
+idna==3.15
+imageio==2.35.1
+imageio-ffmpeg==0.5.1
+importlib_metadata==8.5.0
+isort==5.12.0
+jax-jumpy==1.0.0
+jaynes==0.8.11
+jmespath==1.0.1
+joblib==0.16.0
+kiwisolver==1.4.7
+labmaze==1.0.6
+lit==15.0.7
+lxml==6.1.1
+Markdown==3.7
+matplotlib==3.6.3
+ml-logger==0.8.69
+mock==5.2.0
+more-itertools==10.5.0
+mpyq==0.2.5
+mujoco==2.3.0
+mujoco-py==2.1.2.14
+multidict==6.1.0
+mypy_extensions==1.1.0
+numpy==1.22.4
+numpy-stl==3.1.2
+oauthlib==3.3.1
+opencv-python==4.8.1.78
+opt_einsum==3.1.0
+orderly-set==5.5.0
+packaging==24.2
+pandas==1.3.5
+params-proto==2.9.6
+path==15.0.0
+pathspec==0.12.1
+pillow==10.4.0
+platformdirs==4.3.6
+pluggy==1.5.0
+portpicker==1.6.0
+protobuf==3.20.3
+psutil==7.2.2
+py==1.11.0
+pyasn1==0.6.3
+pyasn1_modules==0.4.2
+pybullet==3.2.7
+pycparser==2.23
+pycurl==7.45.7
+pygame==2.6.1
+pyglet==1.5.0
+PyOpenGL==3.1.5
+pyparsing==2.2.2
+pyrsistent==0.16.0
+PySC2==3.0.0
+pytest==3.8.2
+python-dateutil==2.7.3
+python-utils==3.8.2
+pytz==2026.2
+PyWavelets==1.4.1
+PyYAML==6.0
+regex==2024.11.6
+requests==2.32.4
+requests-futures==1.0.2
+requests-oauthlib==2.0.0
+requests-toolbelt==1.0.0
+rsa==4.9.1
+ruamel.yaml==0.18.16
+ruamel.yaml.clib==0.2.8
+s2clientprotocol==5.0.16.97425.0
+s2protocol==5.0.16.97425.1
+s3transfer==0.11.5
+safetensors==0.5.3
+sanic==25.3.0
+Sanic-Cors==2.2.0
+sanic-routing==23.12.0
+scikit-image==0.19.3
+scikit-video==1.1.11
+scipy==1.10.1
+seaborn==0.13.2
+six==1.17.0
+sk-video==1.1.10
+smmap==3.0.5
+tensorboard==2.0.2
+tensorboardX==2.0
+tensorflow-estimator==2.0.0
+termcolor==2.4.0
+tifffile==2023.7.10
+tomli==2.4.1
+tqdm==4.68.3
+tracerite==1.1.3
+typed-argument-parser==1.7.2
+typing-inspect==0.9.0
+ujson==5.10.0
+urllib3==1.26.20
+uvloop==0.22.1
+waterbear==2.6.8
+wcmatch==10.0
+websocket-client==1.8.0
+websockets==13.1
+Werkzeug==3.0.6
+whichcraft==0.6.1
+zipp==3.20.2
+D4RL @ git+https://github.com/Farama-Foundation/d4rl@e840e80ec4ed51bbb0e557e466198b5d1ae29a15
+MAMujoco @ git+https://github.com/schroederdewitt/multiagent_mujoco@b212ddd74b258e7cea006ff1d642b5ffada4b99d
+mjrl @ git+https://github.com/aravindr93/mjrl@3871d93763d3b49c4741e6daeaebbc605fe140dc
+SMAC @ git+https://github.com/oxwhirl/smac.git@d6aab33f76abc3849c50463a8592a84f59a5ef84
+-e .
+-e ./third_party/multiagent-particle-envs
+-e ./third_party/ddpg-agent
+-e ./third_party/og-marl

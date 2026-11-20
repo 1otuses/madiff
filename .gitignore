@@ -132,6 +132,8 @@ dmypy.json
 .pyre/
 
 # Workspace
+# 加载数据路径
+/diffuser/datasets/paths.py 
 .vscode
 .idea
 .DS_Store
@@ -156,7 +158,6 @@ diffuser/datasets/data
 /tests/
 
 # 本地参考仓库和临时文件
-/autoresearch/
 /trash/
 /transh/
 /tmp/
@@ -164,6 +165,7 @@ diffuser/datasets/data
 /exp_specs/generated/
 
 # 训练输出和离线数据
+/docs/
 /results/
 /outputs/
 /checkpoint/

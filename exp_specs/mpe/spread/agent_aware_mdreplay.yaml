@@ -6,7 +6,7 @@ meta_data:
 
 variables:
   attn_type: ["legacy", "agent_aware"]
-  seed: [100, 200, 300]
+  seed: [100]
 
   horizon: [24]
   returns_scale: [500]
@@ -18,7 +18,7 @@ constants:
   attn_use_time_enc: True
   attn_use_ffn: False
   attn_levels: "all"
-  num_envs: 5
+  num_envs: 10
   eval_model_seed: 0
 
   # misc
@@ -31,7 +31,7 @@ constants:
   decentralized_execution: True
   use_zero_padding: False
   pred_future_padding: True
-  use_ddim_sample: False
+  use_ddim_sample: True
   n_ddim_steps: 15
 
   # model
@@ -83,8 +83,8 @@ constants:
 
   # eval
   evaluator: "utils.MADEvaluator"
-  num_eval: 100
+  num_eval: 10
   eval_freq: 100000
 
   # load checkpoint
-  continue_training: False
+  continue_training: True

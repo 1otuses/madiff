@@ -454,7 +454,7 @@ class SharedConvAttentionDeconv(nn.Module): # 共享Unet+attention
             returns = einops.rearrange(returns, "b t a -> b a t")
             returns_embed = self.net.returns_mlp(returns)
             if use_dropout: # 以一定概率保留returns_embed信息
-                # 这里所有智能体使用相同的 mask
+                # 这里每个agent独立采样 判断是否mask
                 mask = self.net.mask_dist.sample(
                     sample_shape=(returns_embed.size(0), returns_embed.size(1), 1)
                 ).to(returns_embed.device)
