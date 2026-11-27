@@ -13,8 +13,8 @@ variables:
   attn_type: ["legacy", "agent_aware"]
   seed: [100, 200, 300]
 
-  horizon: [20]
-  history_horizon: [8]
+  horizon: [4]
+  history_horizon: [20]
   returns_scale: [8]
   dataset: ["2s3z-Poor"]
   condition_guidance_w: [1.2]
@@ -70,7 +70,7 @@ constants:
   preprocess_fns: []
   use_padding: True
   discount: 0.99
-  max_path_length: 70
+  max_path_length: 120
   termination_penalty: 0.0
 
   # training

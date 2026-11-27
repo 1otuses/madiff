@@ -6,15 +6,15 @@
 meta_data:
   exp_name: "mad_smac_aware"
   script_path: "run_scripts/train.py"
-  num_workers: 3
+  num_workers: 2
   job_name: "{dataset}/h_{horizon}-hh_{history_horizon}-{model}-{attn_type}-{attn_levels}-{attn_cond_mode}-pe_{attn_use_time_enc}-ffn_{attn_use_ffn}-r_{returns_scale}-guidew_{condition_guidance_w}-ctde_{decentralized_execution}"
 
 variables:
   attn_type: ["legacy", "agent_aware"]
-  seed: [100, 200, 300]
+  seed: [200, 300]
 
-  horizon: [20]
-  history_horizon: [8]
+  horizon: [4]
+  history_horizon: [20]
   returns_scale: [20]
   dataset: ["2s3z-Good"]
   condition_guidance_w: [1.2]
@@ -70,7 +70,7 @@ constants:
   preprocess_fns: []
   use_padding: True
   discount: 0.99
-  max_path_length: 70
+  max_path_length: 120
   termination_penalty: 0.0
 
   # training

@@ -164,6 +164,7 @@ diffuser/datasets/data
 /exp_specs/generated/
 
 # 训练输出和离线数据
+/analyze_dataset/
 /results/
 /outputs/
 /checkpoint/

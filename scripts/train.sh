@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 功能: 每卡并行 3 组; 只显示开始训练、每 1 万步及保存/评估/结束等阶段.
-# 默认: legacy + agent_aware, seed=100/200/300, 共 90 组; 原始 YAML 保持不变.
+# 默认: legacy + agent_aware, seed=100/200/300, 共 90 组; 跳过已完成实验, 未完成实验按 checkpoint 续训.
 # 用法: bash scripts/train.sh [--dry-run] [--jobs-per-gpu 3] [--attn-type both|legacy|agent_aware]
 set -euo pipefail
 set +m
@@ -97,6 +97,7 @@ sources += [Path(f"exp_specs/smac/{env}/agent_aware_{quality}_history.yaml")
             for quality in ["good", "medium", "poor"]]
 
 index = 0
+completed = 0
 for source in sources:
     original = yaml.safe_load(source.read_text())
     for seed in [100, 200, 300]:
@@ -107,29 +108,53 @@ for source in sources:
             spec["variables"]["attn_type"] = [method]
             spec["constants"]["show_progress"] = False
             label = f'{spec["variables"]["dataset"][0]} / {method} / seed={seed}'
+            # 按训练入口的覆盖顺序解析配置, 使用同一个日志目录检查完成情况.
+            config = dict(spec["constants"])
+            config.update({key: values[0] for key, values in spec["variables"].items()})
+            config.update(spec["meta_data"])
+            log_dir = Path("logs") / config["exp_name"] / config["job_name"].format(**config) / str(config["seed"])
+            checkpoints = (log_dir / "checkpoint").glob("state_*.pt")
+            latest_step = max((int(path.stem[6:]) for path in checkpoints
+                               if path.stem[6:].isdigit()), default=-1)
+            evaluation_done = True
+            if config["eval_freq"] > 0:
+                suffix = "-ddim" if config.get("use_ddim_sample", False) else ""
+                result = log_dir / "results" / f'step_{latest_step}-ep_{config["num_eval"]}{suffix}.json'
+                evaluation_done = result.is_file()
+            if config["continue_training"] and latest_step >= config["n_train_steps"] and evaluation_done:
+                completed += 1
+                print(f"[跳过已完成] {label} | step={latest_step}", file=sys.stderr)
+                index += 1
+                continue
+            if config["continue_training"] and latest_step >= 0:
+                phase = "续训" if latest_step < config["n_train_steps"] else "补充最终评估"
+                print(f"[{phase}] {label} | checkpoint step={latest_step}", file=sys.stderr)
             path = work_dir / f"{index:03d}.yaml"
             header = (f"# 功能: 总调度中的单组训练, 来源 {source}.\n"
                       f"# 修改: seed={seed}, attn_type={method}, num_workers=1, show_progress=False; 其余参数沿用源配置.\n")
             path.write_text(header + yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))
             print(f'{path}\t{label}\t{spec["constants"]["n_train_steps"]}')
             index += 1
+(work_dir / "completed_count").write_text(str(completed))
 PY
 
 mapfile -t tasks < "$work_dir/tasks.tsv"
-total=${#tasks[@]}
+completed=$(<"$work_dir/completed_count")
+total=$((${#tasks[@]} + completed))
 printf '共 %d 组训练; GPU: %s; 每卡并行 %d 组, 总并发上限 %d.\n' "$total" "${gpus[*]}" "$jobs_per_gpu" "$slot_count"
+printf '已完成跳过 %d 组; 待执行 %d 组.\n' "$completed" "${#tasks[@]}"
 if "$dry_run"; then
     echo "预览采用轮转分配; 实际运行时由先空闲的 GPU 接续任务."
     for i in "${!tasks[@]}"; do
         IFS=$'\t' read -r spec label budget <<< "${tasks[$i]}"
-        printf '[%d/%d] %s\n' "$((i + 1))" "$total" "$label"
+        printf '[%d/%d] %s\n' "$((i + completed + 1))" "$total" "$label"
         printf '  python run_experiment.py -e %q -g %s\n' "$spec" "${gpus[$((i / jobs_per_gpu % ${#gpus[@]}))]}"
     done
     exit 0
 fi
 
 next=0
-finished=0
+finished=$completed
 failed_jobs=()
 next_scan=0
 
@@ -166,7 +191,7 @@ while ((finished < total)); do
             finished=$((finished + 1))
             printf '进度: %d/%d, 失败: %d\n' "$finished" "$total" "${#failed_jobs[@]}"
         fi
-        if [[ -z "${pids[$slot]}" ]] && ((next < total)); then
+        if [[ -z "${pids[$slot]}" ]] && ((next < ${#tasks[@]})); then
             IFS=$'\t' read -r spec label budget <<< "${tasks[$next]}"
             consoles[$slot]="$console_dir/$(printf '%03d' "$next").log"
             printf '[启动 GPU %s/%s] %s\n' "$gpu" "$gpu_slot" "$label"
@@ -189,7 +214,7 @@ while ((finished < total)); do
     fi
 done
 
-printf '全部任务结束: 成功 %d, 失败 %d.\n' "$((total - ${#failed_jobs[@]}))" "${#failed_jobs[@]}"
+printf '全部任务结束: 成功 %d (含已完成跳过 %d), 失败 %d.\n' "$((total - ${#failed_jobs[@]}))" "$completed" "${#failed_jobs[@]}"
 if ((${#failed_jobs[@]})); then
     printf '失败任务: %s\n' "${failed_jobs[@]}" >&2
     echo "失败任务的控制台输出保留在 $console_dir" >&2
